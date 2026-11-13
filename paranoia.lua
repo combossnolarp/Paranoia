@@ -82,7 +82,7 @@ local Window = Blossom.new({ Title = "Paranoia", Script = "Paranoia", Build = "R
 -- Custom logo (sidebar + watermark)
 -- Set LOGO_ASSET_ID to an uploaded Roblox image id to skip the download (e.g. "rbxassetid://123").
 local LOGO_ASSET_ID = nil
-local LOGO_URL = "https://raw.githubusercontent.com/combossnolarp/paranoia/main/assets/logo.png"
+local LOGO_URL = "https://raw.githubusercontent.com/combossnolarp/Paranoia/claude/wizardly-dijkstra-5vzykn/assets/logo.png"
 local LOGO_FILE = "Paranoia/logo.png"
 
 local function resolveLogo()
