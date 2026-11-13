@@ -124,9 +124,13 @@ local function applyLogo(container, image)
 end
 
 -- While the window is being dragged, cover it in black and show the spinning logo in the middle.
-local function setupDragOverlay(animImage, staticImage)
-	local holder, root = Window.Holder, Window.Root
-	if not (holder and root) then return end
+-- Built right away; the logo images are filled in once they download.
+local function setupDragOverlay()
+	local holder = Window.Holder
+	if not holder then
+		warn("[Paranoia] Drag overlay: Window.Holder not found")
+		return nil
+	end
 	local UIS = game:GetService("UserInputService")
 	local RunService = game:GetService("RunService")
 	local Tweens = game:GetService("TweenService")
@@ -150,20 +154,19 @@ local function setupDragOverlay(animImage, staticImage)
 	logo.AnchorPoint = Vector2.new(0.5, 0.5)
 	logo.Position = UDim2.fromScale(0.5, 0.5)
 	logo.Size = UDim2.fromOffset(ANIM_W * 1.4, ANIM_H * 1.4)
+	logo.ScaleType = Enum.ScaleType.Fit
 	logo.ImageTransparency = 1
 	logo.ZIndex = 1001
 	logo.Parent = overlay
-	if animImage then
-		logo.Image = animImage
-		logo.ImageRectSize = Vector2.new(ANIM_W, ANIM_H)
-		logo.ImageRectOffset = Vector2.zero
-	else
-		logo.Image = staticImage or ""
-		logo.ScaleType = Enum.ScaleType.Fit
-	end
 
+	local animated = false
 	local fadeInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	local animConn, elapsed, shown, generation = nil, 0, false, 0
+	local elapsed, shown, generation = 0, false, 0
+	local touches = 0
+
+	local function pressed()
+		return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) or touches > 0
+	end
 
 	local function show()
 		if shown then return end
@@ -173,13 +176,6 @@ local function setupDragOverlay(animImage, staticImage)
 		overlay.Visible = true
 		Tweens:Create(overlay, fadeInfo, { BackgroundTransparency = 0 }):Play()
 		Tweens:Create(logo, fadeInfo, { ImageTransparency = 0 }):Play()
-		if animImage and not animConn then
-			animConn = RunService.RenderStepped:Connect(function(dt)
-				elapsed += dt
-				local frame = math.floor(elapsed / ANIM_FRAME_TIME) % ANIM_FRAMES
-				logo.ImageRectOffset = Vector2.new((frame % ANIM_COLUMNS) * ANIM_W, math.floor(frame / ANIM_COLUMNS) * ANIM_H)
-			end)
-		end
 	end
 
 	local function hide()
@@ -189,43 +185,66 @@ local function setupDragOverlay(animImage, staticImage)
 		Tweens:Create(overlay, fadeInfo, { BackgroundTransparency = 1 }):Play()
 		local tween = Tweens:Create(logo, fadeInfo, { ImageTransparency = 1 })
 		tween.Completed:Connect(function()
-			if generation ~= myGeneration then return end
-			overlay.Visible = false
-			if animConn then animConn:Disconnect(); animConn = nil end
+			if generation == myGeneration then overlay.Visible = false end
 		end)
 		tween:Play()
 	end
 
-	local function isClick(input)
-		return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
-	end
-	local function mousePos()
+	-- Resizing also moves the holder, so a press that starts on a resize handle is not a drag.
+	local resizing = false
+	local function overResizeHandle()
 		local location = UIS:GetMouseLocation()
 		local screen = Window.Screen
-		return screen and location + screen.AbsolutePosition or location
+		local point = screen and location + screen.AbsolutePosition or location
+		for _, handle in ipairs(Window.ResizeHandles or {}) do
+			local p, size = handle.AbsolutePosition, handle.AbsoluteSize
+			if point.X >= p.X and point.X <= p.X + size.X and point.Y >= p.Y and point.Y <= p.Y + size.Y then
+				return true
+			end
+		end
+		return false
 	end
 
-	-- Mirrors the library's own drag rule: dragging starts on the window background, not on controls.
-	root.InputBegan:Connect(function(input)
-		if not isClick(input) then return end
-		local start = mousePos()
-		local okCheck, overControl = pcall(function() return Window:_overControl(start) end)
-		if okCheck and overControl then return end
-		local origin = holder.AbsolutePosition
-		local moveConn, endConn
-		moveConn = RunService.RenderStepped:Connect(function()
-			if (mousePos() - start).Magnitude >= 2 or (holder.AbsolutePosition - origin).Magnitude >= 1 then
-				show()
-			end
-		end)
-		endConn = UIS.InputEnded:Connect(function(ended)
-			if not isClick(ended) then return end
-			moveConn:Disconnect()
-			endConn:Disconnect()
-			hide()
-		end)
+	UIS.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then touches += 1 end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			resizing = overResizeHandle()
+		end
 	end)
+	UIS.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then touches = math.max(0, touches - 1) end
+	end)
+
+	-- The library moves Window.Holder while the window is dragged, so a move while the
+	-- button is held means a drag is in progress.
+	holder:GetPropertyChangedSignal("Position"):Connect(function()
+		if pressed() and not resizing and holder.Visible then show() end
+	end)
+
+	RunService.RenderStepped:Connect(function(dt)
+		if shown and not pressed() then hide() end
+		if overlay.Visible and animated then
+			elapsed += dt
+			local frame = math.floor(elapsed / ANIM_FRAME_TIME) % ANIM_FRAMES
+			logo.ImageRectOffset = Vector2.new((frame % ANIM_COLUMNS) * ANIM_W, math.floor(frame / ANIM_COLUMNS) * ANIM_H)
+		end
+	end)
+
+	print("[Paranoia] Drag overlay ready")
+	return function(animImage, staticImage)
+		if animImage then
+			animated = true
+			logo.ScaleType = Enum.ScaleType.Stretch
+			logo.ImageRectSize = Vector2.new(ANIM_W, ANIM_H)
+			logo.ImageRectOffset = Vector2.zero
+			logo.Image = animImage
+		elseif staticImage then
+			logo.Image = staticImage
+		end
+	end
 end
+
+local setDragLogo = setupDragOverlay()
 
 task.spawn(function()
 	local image = resolveAsset(LOGO)
@@ -236,10 +255,8 @@ task.spawn(function()
 		warn("[Paranoia] Could not load custom logo; keeping default")
 	end
 	local anim = resolveAsset(LOGO_ANIM)
-	if not anim and not image then
-		warn("[Paranoia] Could not load drag logo")
-	end
-	setupDragOverlay(anim, image)
+	if not anim then warn("[Paranoia] Could not load animated drag logo") end
+	if setDragLogo then setDragLogo(anim, image) end
 end)
 
 Window:Category("Combat")
