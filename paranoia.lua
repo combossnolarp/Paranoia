@@ -79,26 +79,28 @@ end
 
 local Window = Blossom.new({ Title = "Paranoia", Script = "Paranoia", Build = "Rivals", Theme = "Paranoia" })
 
--- Custom logo (sidebar + watermark)
--- Set LOGO_ASSET_ID to an uploaded Roblox image id to skip the download (e.g. "rbxassetid://123").
-local LOGO_ASSET_ID = nil
-local LOGO_URL = "https://raw.githubusercontent.com/combossnolarp/Paranoia/claude/wizardly-dijkstra-5vzykn/assets/logo.png"
-local LOGO_FILE = "Paranoia/logo.png"
+-- Custom logo (sidebar + watermark) and drag overlay
+-- Set an asset id to skip the download (e.g. "rbxassetid://123").
+local ASSET_BASE = "https://raw.githubusercontent.com/combossnolarp/Paranoia/claude/wizardly-dijkstra-5vzykn/assets/"
+local LOGO = { Id = nil, Url = ASSET_BASE .. "logo.png", File = "Paranoia/logo_v1.png" }
+-- Sprite sheet of the spinning logo: 60 frames, 6 columns x 10 rows, 168x89 each, 30 ms per frame.
+local LOGO_ANIM = { Id = nil, Url = ASSET_BASE .. "logo_anim.png", File = "Paranoia/logo_anim_v1.png" }
+local ANIM_FRAMES, ANIM_COLUMNS, ANIM_W, ANIM_H, ANIM_FRAME_TIME = 60, 6, 168, 89, 0.03
 
-local function resolveLogo()
-	if LOGO_ASSET_ID then return LOGO_ASSET_ID end
+local function resolveAsset(asset)
+	if asset.Id then return asset.Id end
 	local getAsset = getcustomasset or getsynasset
 	if not (getAsset and writefile and isfile) then return nil end
-	local ok, asset = pcall(function()
-		if not isfile(LOGO_FILE) then
+	local ok, result = pcall(function()
+		if not isfile(asset.File) then
 			if makefolder and isfolder and not isfolder("Paranoia") then makefolder("Paranoia") end
-			local data = game:HttpGet(LOGO_URL)
+			local data = game:HttpGet(asset.Url)
 			if not data or #data == 0 then return nil end
-			writefile(LOGO_FILE, data)
+			writefile(asset.File, data)
 		end
-		return getAsset(LOGO_FILE)
+		return getAsset(asset.File)
 	end)
-	return ok and asset or nil
+	return ok and result or nil
 end
 
 local function applyLogo(container, image)
@@ -121,14 +123,123 @@ local function applyLogo(container, image)
 	logo.Parent = icon
 end
 
-task.spawn(function()
-	local image = resolveLogo()
-	if not image then
-		warn("[Paranoia] Could not load custom logo; keeping default")
-		return
+-- While the window is being dragged, cover it in black and show the spinning logo in the middle.
+local function setupDragOverlay(animImage, staticImage)
+	local holder, root = Window.Holder, Window.Root
+	if not (holder and root) then return end
+	local UIS = game:GetService("UserInputService")
+	local RunService = game:GetService("RunService")
+	local Tweens = game:GetService("TweenService")
+
+	local overlay = Instance.new("Frame")
+	overlay.Name = "DragOverlay"
+	overlay.Size = UDim2.fromScale(1, 1)
+	overlay.BackgroundColor3 = Color3.new(0, 0, 0)
+	overlay.BackgroundTransparency = 1
+	overlay.BorderSizePixel = 0
+	overlay.ZIndex = 1000
+	overlay.Visible = false
+	overlay.Parent = holder
+	local overlayCorner = Instance.new("UICorner")
+	overlayCorner.CornerRadius = UDim.new(0, 6)
+	overlayCorner.Parent = overlay
+
+	local logo = Instance.new("ImageLabel")
+	logo.Name = "Logo"
+	logo.BackgroundTransparency = 1
+	logo.AnchorPoint = Vector2.new(0.5, 0.5)
+	logo.Position = UDim2.fromScale(0.5, 0.5)
+	logo.Size = UDim2.fromOffset(ANIM_W * 1.4, ANIM_H * 1.4)
+	logo.ImageTransparency = 1
+	logo.ZIndex = 1001
+	logo.Parent = overlay
+	if animImage then
+		logo.Image = animImage
+		logo.ImageRectSize = Vector2.new(ANIM_W, ANIM_H)
+		logo.ImageRectOffset = Vector2.zero
+	else
+		logo.Image = staticImage or ""
+		logo.ScaleType = Enum.ScaleType.Fit
 	end
-	applyLogo(Window.Sidebar, image)
-	applyLogo(Window.Watermark, image)
+
+	local fadeInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local animConn, elapsed, shown, generation = nil, 0, false, 0
+
+	local function show()
+		if shown then return end
+		shown = true
+		generation += 1
+		elapsed = 0
+		overlay.Visible = true
+		Tweens:Create(overlay, fadeInfo, { BackgroundTransparency = 0 }):Play()
+		Tweens:Create(logo, fadeInfo, { ImageTransparency = 0 }):Play()
+		if animImage and not animConn then
+			animConn = RunService.RenderStepped:Connect(function(dt)
+				elapsed += dt
+				local frame = math.floor(elapsed / ANIM_FRAME_TIME) % ANIM_FRAMES
+				logo.ImageRectOffset = Vector2.new((frame % ANIM_COLUMNS) * ANIM_W, math.floor(frame / ANIM_COLUMNS) * ANIM_H)
+			end)
+		end
+	end
+
+	local function hide()
+		if not shown then return end
+		shown = false
+		local myGeneration = generation
+		Tweens:Create(overlay, fadeInfo, { BackgroundTransparency = 1 }):Play()
+		local tween = Tweens:Create(logo, fadeInfo, { ImageTransparency = 1 })
+		tween.Completed:Connect(function()
+			if generation ~= myGeneration then return end
+			overlay.Visible = false
+			if animConn then animConn:Disconnect(); animConn = nil end
+		end)
+		tween:Play()
+	end
+
+	local function isClick(input)
+		return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
+	end
+	local function mousePos()
+		local location = UIS:GetMouseLocation()
+		local screen = Window.Screen
+		return screen and location + screen.AbsolutePosition or location
+	end
+
+	-- Mirrors the library's own drag rule: dragging starts on the window background, not on controls.
+	root.InputBegan:Connect(function(input)
+		if not isClick(input) then return end
+		local start = mousePos()
+		local okCheck, overControl = pcall(function() return Window:_overControl(start) end)
+		if okCheck and overControl then return end
+		local origin = holder.AbsolutePosition
+		local moveConn, endConn
+		moveConn = RunService.RenderStepped:Connect(function()
+			if (mousePos() - start).Magnitude >= 2 or (holder.AbsolutePosition - origin).Magnitude >= 1 then
+				show()
+			end
+		end)
+		endConn = UIS.InputEnded:Connect(function(ended)
+			if not isClick(ended) then return end
+			moveConn:Disconnect()
+			endConn:Disconnect()
+			hide()
+		end)
+	end)
+end
+
+task.spawn(function()
+	local image = resolveAsset(LOGO)
+	if image then
+		applyLogo(Window.Sidebar, image)
+		applyLogo(Window.Watermark, image)
+	else
+		warn("[Paranoia] Could not load custom logo; keeping default")
+	end
+	local anim = resolveAsset(LOGO_ANIM)
+	if not anim and not image then
+		warn("[Paranoia] Could not load drag logo")
+	end
+	setupDragOverlay(anim, image)
 end)
 
 Window:Category("Combat")
