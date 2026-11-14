@@ -74,8 +74,14 @@ end
 local Window = Blossom.new({ Title = "Paranoia", Script = "Paranoia", Build = "Rivals", Theme = "Paranoia" })
 
 local ASSET_BASE = "https://raw.githubusercontent.com/combossnolarp/Paranoia/claude/wizardly-dijkstra-5vzykn/assets/"
-local LOGO = { Id = nil, Url = ASSET_BASE .. "logo_mono.png", File = "Paranoia/logo_mono_v1.png" }
-local LOGO_ANIM = { Id = nil, Url = ASSET_BASE .. "logo_anim_mono.png", File = "Paranoia/logo_anim_mono_v1.png" }
+local LOGO = {
+	Base = { Id = nil, Url = ASSET_BASE .. "logo_base.png", File = "Paranoia/logo_base_v1.png" },
+	Tint = { Id = nil, Url = ASSET_BASE .. "logo_tint.png", File = "Paranoia/logo_tint_v1.png" },
+}
+local LOGO_ANIM = {
+	Base = { Id = nil, Url = ASSET_BASE .. "logo_anim_base.png", File = "Paranoia/logo_anim_base_v1.png" },
+	Tint = { Id = nil, Url = ASSET_BASE .. "logo_anim_tint.png", File = "Paranoia/logo_anim_tint_v1.png" },
+}
 local ANIM_FRAMES, ANIM_COLUMNS, ANIM_W, ANIM_H, ANIM_FRAME_TIME = 60, 6, 168, 89, 0.03
 
 local LogoImages = {}
@@ -143,7 +149,20 @@ local function resolveAsset(asset)
 	return ok and result or nil
 end
 
-local function applyLogo(container, image)
+local function newLogoLayer(parent, image, zindex, tinted)
+	local layer = Instance.new("ImageLabel")
+	layer.BackgroundTransparency = 1
+	layer.BorderSizePixel = 0
+	layer.Size = UDim2.fromScale(1, 1)
+	layer.ScaleType = Enum.ScaleType.Fit
+	layer.Image = image or ""
+	layer.ZIndex = zindex
+	layer.Parent = parent
+	if tinted then trackLogo(layer) end
+	return layer
+end
+
+local function applyLogo(container, images)
 	if not container then return end
 	local icon = container:FindFirstChild("Icon")
 	if not icon then return end
@@ -158,10 +177,10 @@ local function applyLogo(container, image)
 	logo.Position = UDim2.fromScale(0.5, 0.5)
 	logo.AnchorPoint = Vector2.new(0.5, 0.5)
 	logo.ScaleType = Enum.ScaleType.Fit
-	logo.Image = image
+	logo.Image = images.Base or ""
 	logo.ZIndex = icon.ZIndex + 1
 	logo.Parent = icon
-	trackLogo(logo)
+	newLogoLayer(logo, images.Tint, icon.ZIndex + 2, true)
 end
 
 local function setupDragOverlay()
@@ -194,7 +213,9 @@ local function setupDragOverlay()
 	logo.ImageTransparency = 1
 	logo.ZIndex = 1001
 	logo.Parent = overlay
-	trackLogo(logo)
+	local tintLayer = newLogoLayer(logo, nil, 1002, true)
+	tintLayer.ImageTransparency = 1
+	local layers = { logo, tintLayer }
 
 	local animated = false
 	local fadeInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -212,7 +233,9 @@ local function setupDragOverlay()
 		elapsed = 0
 		overlay.Visible = true
 		Tweens:Create(overlay, fadeInfo, { BackgroundTransparency = 0 }):Play()
-		Tweens:Create(logo, fadeInfo, { ImageTransparency = 0 }):Play()
+		for _, layer in ipairs(layers) do
+			Tweens:Create(layer, fadeInfo, { ImageTransparency = 0 }):Play()
+		end
 	end
 
 	local function hide()
@@ -220,6 +243,7 @@ local function setupDragOverlay()
 		shown = false
 		local myGeneration = generation
 		Tweens:Create(overlay, fadeInfo, { BackgroundTransparency = 1 }):Play()
+		Tweens:Create(tintLayer, fadeInfo, { ImageTransparency = 1 }):Play()
 		local tween = Tweens:Create(logo, fadeInfo, { ImageTransparency = 1 })
 		tween.Completed:Connect(function()
 			if generation == myGeneration then overlay.Visible = false end
@@ -260,33 +284,42 @@ local function setupDragOverlay()
 		if overlay.Visible and animated then
 			elapsed += dt
 			local frame = math.floor(elapsed / ANIM_FRAME_TIME) % ANIM_FRAMES
-			logo.ImageRectOffset = Vector2.new((frame % ANIM_COLUMNS) * ANIM_W, math.floor(frame / ANIM_COLUMNS) * ANIM_H)
+			local offset = Vector2.new((frame % ANIM_COLUMNS) * ANIM_W, math.floor(frame / ANIM_COLUMNS) * ANIM_H)
+			for _, layer in ipairs(layers) do layer.ImageRectOffset = offset end
 		end
 	end)
 
-	return function(animImage, staticImage)
-		if animImage then
+	return function(anim, static)
+		if anim.Base or anim.Tint then
 			animated = true
-			logo.ScaleType = Enum.ScaleType.Stretch
-			logo.ImageRectSize = Vector2.new(ANIM_W, ANIM_H)
-			logo.ImageRectOffset = Vector2.zero
-			logo.Image = animImage
-		elseif staticImage then
-			logo.Image = staticImage
+			for _, layer in ipairs(layers) do
+				layer.ScaleType = Enum.ScaleType.Stretch
+				layer.ImageRectSize = Vector2.new(ANIM_W, ANIM_H)
+				layer.ImageRectOffset = Vector2.zero
+			end
+			logo.Image = anim.Base or ""
+			tintLayer.Image = anim.Tint or ""
+		else
+			logo.Image = static.Base or ""
+			tintLayer.Image = static.Tint or ""
 		end
 	end
 end
 
 local setDragLogo = setupDragOverlay()
 
+local function resolvePair(pair)
+	return { Base = resolveAsset(pair.Base), Tint = resolveAsset(pair.Tint) }
+end
+
 task.spawn(function()
-	local image = resolveAsset(LOGO)
-	if image then
-		applyLogo(Window.Sidebar, image)
-		applyLogo(Window.Watermark, image)
+	local static = resolvePair(LOGO)
+	if static.Base or static.Tint then
+		applyLogo(Window.Sidebar, static)
+		applyLogo(Window.Watermark, static)
 	end
-	local anim = resolveAsset(LOGO_ANIM)
-	if setDragLogo then setDragLogo(anim, image) end
+	local anim = resolvePair(LOGO_ANIM)
+	if setDragLogo then setDragLogo(anim, static) end
 end)
 
 Window:Category("Combat")
