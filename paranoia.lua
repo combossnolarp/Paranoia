@@ -661,13 +661,59 @@ Plugins:Section({ Name = "Plugins", Icon = Icon("plugins", "file"), Side = 1 }):
 Window:BuildSettings(Settings)
 finishNav()
 
+do
+	local EXTRA_FONTS = {
+		{ "Fortnite Style", "Oswald" },
+		{ "Phantom Forces Style", "TitilliumWeb" },
+		{ "Call of Duty Style", "Sarpanch" },
+		{ "Borderlands Style", "Bangers" },
+		{ "Marshmello Style", "FredokaOne" },
+		{ "Minecraft Style", "Arcade" },
+		{ "Halo Style", "Michroma" },
+		{ "Valorant Style", "RobotoCondensed" },
+		{ "Cartoon", "LuckiestGuy" },
+		{ "Graffiti", "PermanentMarker" },
+		{ "Horror", "Creepster" },
+		{ "Typewriter", "SpecialElite" },
+		{ "Handwritten", "PatrickHand" },
+		{ "Gothic", "GrenzeGotisch" },
+	}
+	local fonts = Blossom.Fonts
+	local added = {}
+	if fonts then
+		for _, entry in ipairs(EXTRA_FONTS) do
+			local ok, family = pcall(function()
+				return Font.fromEnum(Enum.Font[entry[2]]).Family
+			end)
+			if ok and family then
+				fonts[entry[1]] = family
+				table.insert(added, entry[1])
+			end
+		end
+	end
+	if #added > 0 then
+		for _, object in pairs(Window.FlagOwners or {}) do
+			if type(object) == "table" and type(object.Options) == "table" and type(object.SetOptions) == "function" then
+				local isFontList = table.find(object.Options, "Inter") and table.find(object.Options, "Arimo")
+				if isFontList then
+					local options = table.clone(object.Options)
+					for _, name in ipairs(added) do
+						if not table.find(options, name) then table.insert(options, name) end
+					end
+					object:SetOptions(options)
+				end
+			end
+		end
+	end
+end
+
 local MenuEffects = {}
 do
 	local RunService = game:GetService("RunService")
 	local Lighting = game:GetService("Lighting")
 	local FxTweens = game:GetService("TweenService")
 
-	local state = { Blur = false, Effect = "None", Color = Color3.new(1, 1, 1), Amount = 50, Size = 1, Glow = 40, ShowClosed = false }
+	local state = { Blur = false, Effect = "None", Color = Color3.new(1, 1, 1), Amount = 50, Size = 1, Speed = 1, Glow = 40, ShowClosed = false }
 	local MAX_PARTICLES = 220
 	local BLUR_SIZE = 18
 	local FALLBACK_IMAGE = "rbxasset://textures/particles/sparkles_main.dds"
@@ -890,7 +936,7 @@ do
 			return
 		end
 		layer.Enabled = true
-		dt = math.min(dt, 0.1)
+		dt = math.min(dt, 0.1) * state.Speed
 		clock += dt
 		local w, h = viewport()
 		local count = math.floor(state.Amount / 100 * MAX_PARTICLES + 0.5)
@@ -1028,6 +1074,7 @@ do
 		end
 		menuSection:Slider({ Name = "Amount", Min = 0, Max = 100, Default = state.Amount, Suffix = "%", Callback = function(value) state.Amount = value end })
 		menuSection:Slider({ Name = "Size", Min = 0, Max = 10, Default = state.Size, Decimals = 1, Suffix = "x", Callback = function(value) state.Size = value end })
+		menuSection:Slider({ Name = "Speed", Min = 0, Max = 10, Default = state.Speed, Decimals = 1, Suffix = "x", Callback = function(value) state.Speed = value end })
 		menuSection:Slider({ Name = "Glow", Min = 0, Max = 100, Default = state.Glow, Suffix = "%", Callback = function(value) state.Glow = value end })
 		menuSection:Toggle({ Name = "Show When Menu Is Closed", Default = false, Callback = function(value) state.ShowClosed = value end })
 	end
