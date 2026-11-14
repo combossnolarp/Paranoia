@@ -9,30 +9,24 @@ if not Blossom then
 	if not Blossom then
 		local src = game:HttpGet("https://raw.githubusercontent.com/mmr1337/Blossom/main/Blossom.luau")
 		if not src or src == "" then
-			warn("Failed to download Blossom library")
 			return
 		end
 
-		-- Patch the Blossom library to fix the Alpha slider and add the checkerboard
 		local function replace(text, target, replacement)
 			return string.gsub(text, target, function() return replacement end, 1)
 		end
 
-		-- 1. Allow commit() to pass alpha changes properly
 		src = replace(src, "if picker%.Target then picker%.Target:Set%(Color3%.fromHSV%(picker%.H, picker%.S, picker%.V%), picker%.Alpha%) end",
 			"if picker.Target then picker.Target:Set(Color3.fromHSV(picker.H, picker.S, picker.V), picker.Alpha, true) end")
 
-		-- 2. Update the color swatch preview to respect transparency and the animation state
 		src = replace(src, "swatch%.BackgroundColor3 = value\n\t\tif win%.Picker%.Target == color and not win%.Picker%.Dragging then win%.Picker%.Sync%(%) end\n\t\tif not silent then fire%(color%.Callback, value, color%.Alpha%) end",
 			"swatch.BackgroundColor3 = value\n\t\tswatch.BackgroundTransparency = color.Alpha\n\t\tif win.Picker.Target == color and not win.Picker.Dragging then win.Picker.Sync() end\n\t\tif not silent then fire(color.Callback, value, color.Alpha) end")
 
-		-- 3. Ensure dragging and committing the alpha slider triggers the callback
 		src = replace(src, "picker%.S, picker%.V, picker%.Alpha = s, v, target%.Alpha or 0",
 			"picker.S, picker.V, picker.Alpha = s, v, target.Alpha or 0")
 		src = replace(src, "if picker%.Target then picker%.Target:Set%(Color3%.fromHSV%(picker%.H, picker%.S, picker%.V%), picker%.Alpha%) end",
 			"if picker.Target then picker.Target:Set(Color3.fromHSV(picker.H, picker.S, picker.V), picker.Alpha) end")
 
-		-- 4. Draw a checkerboard behind the alpha bar so opacity is visible
 		local checkerboardCode = [[
 		for i = 0, 60 do
 			for j = 0, 3 do
@@ -79,13 +73,59 @@ end
 
 local Window = Blossom.new({ Title = "Paranoia", Script = "Paranoia", Build = "Rivals", Theme = "Paranoia" })
 
--- Custom logo (sidebar + watermark) and drag overlay
--- Set an asset id to skip the download (e.g. "rbxassetid://123").
 local ASSET_BASE = "https://raw.githubusercontent.com/combossnolarp/Paranoia/claude/wizardly-dijkstra-5vzykn/assets/"
-local LOGO = { Id = nil, Url = ASSET_BASE .. "logo.png", File = "Paranoia/logo_v1.png" }
--- Sprite sheet of the spinning logo: 60 frames, 6 columns x 10 rows, 168x89 each, 30 ms per frame.
-local LOGO_ANIM = { Id = nil, Url = ASSET_BASE .. "logo_anim.png", File = "Paranoia/logo_anim_v1.png" }
+local LOGO = { Id = nil, Url = ASSET_BASE .. "logo_mono.png", File = "Paranoia/logo_mono_v1.png" }
+local LOGO_ANIM = { Id = nil, Url = ASSET_BASE .. "logo_anim_mono.png", File = "Paranoia/logo_anim_mono_v1.png" }
 local ANIM_FRAMES, ANIM_COLUMNS, ANIM_W, ANIM_H, ANIM_FRAME_TIME = 60, 6, 168, 89, 0.03
+
+local LogoImages = {}
+local accentColor = (Themes and Themes.Paranoia and Themes.Paranoia.Accent) or Color3.fromRGB(230, 160, 255)
+
+local function setAccent(color)
+	accentColor = color
+	for image in pairs(LogoImages) do
+		image.ImageColor3 = color
+	end
+end
+
+local function trackLogo(image)
+	LogoImages[image] = true
+	image.ImageColor3 = accentColor
+	image.Destroying:Connect(function() LogoImages[image] = nil end)
+end
+
+local function watchAccent()
+	local sidebar = Window.Sidebar
+	local icon = sidebar and sidebar:FindFirstChild("Icon")
+	local source
+	if icon then
+		for _, child in ipairs(icon:GetChildren()) do
+			if child:IsA("Frame") then
+				source = child
+				break
+			end
+		end
+	end
+	if source then
+		setAccent(source.BackgroundColor3)
+		source:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
+			setAccent(source.BackgroundColor3)
+		end)
+		return
+	end
+	local applyTheme, setThemeColor = Window.ApplyTheme, Window.SetThemeColor
+	Window.ApplyTheme = function(self, name, ...)
+		local theme = Themes and Themes[name]
+		if theme and theme.Accent then setAccent(theme.Accent) end
+		return applyTheme(self, name, ...)
+	end
+	Window.SetThemeColor = function(self, key, color, ...)
+		if key == "Accent" then setAccent(color) end
+		return setThemeColor(self, key, color, ...)
+	end
+end
+
+watchAccent()
 
 local function resolveAsset(asset)
 	if asset.Id then return asset.Id end
@@ -121,16 +161,12 @@ local function applyLogo(container, image)
 	logo.Image = image
 	logo.ZIndex = icon.ZIndex + 1
 	logo.Parent = icon
+	trackLogo(logo)
 end
 
--- While the window is being dragged, cover it in black and show the spinning logo in the middle.
--- Built right away; the logo images are filled in once they download.
 local function setupDragOverlay()
 	local holder = Window.Holder
-	if not holder then
-		warn("[Paranoia] Drag overlay: Window.Holder not found")
-		return nil
-	end
+	if not holder then return nil end
 	local UIS = game:GetService("UserInputService")
 	local RunService = game:GetService("RunService")
 	local Tweens = game:GetService("TweenService")
@@ -158,6 +194,7 @@ local function setupDragOverlay()
 	logo.ImageTransparency = 1
 	logo.ZIndex = 1001
 	logo.Parent = overlay
+	trackLogo(logo)
 
 	local animated = false
 	local fadeInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -190,7 +227,6 @@ local function setupDragOverlay()
 		tween:Play()
 	end
 
-	-- Resizing also moves the holder, so a press that starts on a resize handle is not a drag.
 	local resizing = false
 	local function overResizeHandle()
 		local location = UIS:GetMouseLocation()
@@ -215,8 +251,6 @@ local function setupDragOverlay()
 		if input.UserInputType == Enum.UserInputType.Touch then touches = math.max(0, touches - 1) end
 	end)
 
-	-- The library moves Window.Holder while the window is dragged, so a move while the
-	-- button is held means a drag is in progress.
 	holder:GetPropertyChangedSignal("Position"):Connect(function()
 		if pressed() and not resizing and holder.Visible then show() end
 	end)
@@ -230,7 +264,6 @@ local function setupDragOverlay()
 		end
 	end)
 
-	print("[Paranoia] Drag overlay ready")
 	return function(animImage, staticImage)
 		if animImage then
 			animated = true
@@ -251,11 +284,8 @@ task.spawn(function()
 	if image then
 		applyLogo(Window.Sidebar, image)
 		applyLogo(Window.Watermark, image)
-	else
-		warn("[Paranoia] Could not load custom logo; keeping default")
 	end
 	local anim = resolveAsset(LOGO_ANIM)
-	if not anim then warn("[Paranoia] Could not load animated drag logo") end
 	if setDragLogo then setDragLogo(anim, image) end
 end)
 
