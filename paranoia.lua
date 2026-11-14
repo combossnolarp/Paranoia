@@ -127,6 +127,10 @@ if not Blossom then
 			"\t\t\tif toggle.Keybind.Mode == \"Hold\" then toggle:Set(true) else toggle:Set(not toggle.Value) end\n\t\tend\n\t\ttoggle.Keybind.OnRelease = function()\n\t\t\tif toggle.Keybind.Mode == \"Hold\" then toggle:Set(false) end\n\t\tend",
 			"\t\t\tlocal mode = toggle.Keybind.Mode\n\t\t\tif mode == \"Always\" then return end\n\t\t\tif mode == \"Hold\" then toggle:Set(true) else toggle:Set(not toggle.Value) end\n\t\tend\n\t\ttoggle.Keybind.OnRelease = function()\n\t\t\tif toggle.Keybind.Mode == \"Hold\" then toggle:Set(false) end\n\t\tend\n\t\ttoggle.Keybind.OnModeChanged = function(mode, previous)\n\t\t\tif mode == \"Always\" then toggle:Set(true) elseif previous == \"Always\" then toggle:Set(false) end\n\t\tend\n\t\ttoggle.Keybind.GetState = function() return toggle.Value end")
 
+		src = replacePlain(src,
+			"\t\tif isClick(input) then\n\t\t\tlocal point = mousePos()",
+			"\t\tif isClick(input) then\n\t\t\tlocal point = mousePos()\n\t\t\tif input.UserInputType == Enum.UserInputType.Touch then\n\t\t\t\tpoint = Vector2.new(input.Position.X, input.Position.Y) + game:GetService(\"GuiService\"):GetGuiInset() + (ScreenRef and ScreenRef.AbsolutePosition or Vector2.zero)\n\t\t\tend")
+
 		do
 			local menuStart = string.find(src, "function Window:_buildKeybindMenu()", 1, true)
 			local menuEnd = string.find(src, "function Window:_buildPicker()", 1, true)
@@ -733,15 +737,7 @@ local function finishNav()
 end
 
 Category("Combat")
-local RageMain, RageAntiAim = Group({ Name = "Rage", Icon = Icon("rage", "target") }, {
-	{ Name = "Ragebot", Icon = Icon("ragebot", "robot") },
-	{ Name = "Anti Aim", Icon = Icon("antiaim", "wrench") },
-})
-local LegitAim, LegitSilent, LegitTrigger = Group({ Name = "Legit", Icon = Icon("legit", "bullet") }, {
-	{ Name = "Aim Assist", Icon = Icon("aimassist", "target") },
-	{ Name = "Silent Aim", Icon = Icon("silent", "bullet") },
-	{ Name = "Triggerbot", Icon = Icon("trigger", "bullet") },
-})
+local AimbotTab = Tab({ Name = "Aimbot", Icon = Icon("aimassist", "target") })
 Category("Visuals")
 local EspMain, EspInfo, EspWorld, EspCosmetics = Group({ Name = "ESP", Icon = Icon("esp", "smile") }, {
 	{ Name = "Main", Icon = Icon("esp", "smile") },
@@ -749,81 +745,8 @@ local EspMain, EspInfo, EspWorld, EspCosmetics = Group({ Name = "ESP", Icon = Ic
 	{ Name = "World", Icon = Icon("world", "globe") },
 	{ Name = "Cosmetics", Icon = Icon("preview", "smile") },
 })
-local EffectsLocal, EffectsWorld = Group({ Name = "Visuals", Icon = Icon("effects", "globe") }, {
-	{ Name = "Local", Icon = Icon("local", "smile") },
-	{ Name = "World", Icon = Icon("world", "globe") },
-})
-Category("Misc")
-local MiscCharacter, MiscWeapons, MiscAutomation = Group({ Name = "Misc", Icon = Icon("misc", "cube") }, {
-	{ Name = "Character", Icon = Icon("character", "smile") },
-	{ Name = "Weapon Mods", Icon = Icon("weaponmods", "wrench") },
-	{ Name = "Automation", Icon = Icon("automation", "robot") },
-})
-Category("Player")
-local MovementMain = Group({ Name = "Movement", Icon = Icon("movement", "smile") }, {
-	{ Name = "Character", Icon = Icon("speed", "smile") },
-})
+local VisualsTab = Tab({ Name = "Visuals", Icon = Icon("effects", "globe") })
 local Settings = Tab({ Name = "Settings", Icon = Icon("settings", "gear") })
-
-local Ragebot = RageMain:Section({ Name = "Ragebot", Icon = Icon("ragebot", "robot"), Side = 1 })
-Ragebot:Toggle({ Name = "Enabled", Default = true, Keybind = Enum.KeyCode.C })
-Ragebot:Divider()
-Ragebot:Toggle({ Name = "Auto Shoot", Default = true })
-Ragebot:Toggle({ Name = "Auto Scope", Default = true })
-Ragebot:Toggle({ Name = "Auto Reload", Default = false })
-Ragebot:Toggle({ Name = "Force Headshot", Default = false })
-Ragebot:Divider()
-Ragebot:Toggle({ Name = "Autowall", Default = true })
-Ragebot:Slider({ Name = "Min Damage", Min = 1, Max = 100, Default = 20, Suffix = "hp" })
-Ragebot:Slider({ Name = "Hitchance", Min = 0, Max = 100, Default = 85, Suffix = "%" })
-Ragebot:RangeSlider({ Name = "Damage Range", Min = 0, Max = 100, Default = { 20, 80 }, Suffix = "hp" })
-Ragebot:Divider()
-Ragebot:Dropdown({ Name = "Target Selection", Options = { "Closest to Crosshair", "Lowest Health", "Highest Threat", "Closest Distance" }, Default = "Closest to Crosshair" })
-Ragebot:Slider({ Name = "Max Distance", Min = 0, Max = 2000, Default = 798, Suffix = "st" })
-
-local Targeting = RageMain:Section({ Name = "Targeting", Icon = Icon("targeting", "bullet"), Side = 2 })
-Targeting:Dropdown({ Name = "Hitboxes", Options = { "Head", "Torso", "Arms", "Legs" }, Default = { "Head", "Torso" }, Multi = true })
-
-local Silent = LegitSilent:Section({ Name = "Silent Aim", Icon = Icon("silent", "bullet"), Side = 1 })
-Silent:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.V })
-Silent:Divider()
-Silent:Toggle({ Name = "Use FOV", Default = true })
-Silent:Toggle({ Name = "Draw FOV", Default = true, Color = Color3.fromRGB(216, 222, 218) })
-Silent:Slider({ Name = "FOV Size", Min = 0, Max = 500, Default = 120, Suffix = "px" })
-Silent:Divider()
-Silent:Slider({ Name = "Hitchance", Min = 0, Max = 100, Default = 100, Suffix = "%" })
-Silent:Dropdown({ Name = "Aim Point", Options = { "Head", "Torso", "Closest" }, Default = "Head" })
-Silent:Toggle({ Name = "Prediction", Default = true })
-Silent:Slider({ Name = "Prediction Amount", Min = 0, Max = 5, Default = 1.2, Decimals = 1, Suffix = "x" })
-
-local AntiAim = RageAntiAim:Section({ Name = "Anti Aim", Icon = Icon("antiaim", "wrench"), Description = "Desync & angles", Side = 1 })
-AntiAim:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.Z })
-AntiAim:Divider()
-AntiAim:Dropdown({ Name = "Pitch", Options = { "None", "Down", "Up", "Zero", "Random" }, Default = "Zero" })
-AntiAim:Dropdown({ Name = "Yaw", Options = { "Backward", "Spin", "Jitter" }, Default = "Backward" })
-AntiAim:Slider({ Name = "Spin Speed", Min = 0, Max = 100, Default = 20 })
-AntiAim:Slider({ Name = "Jitter Range", Min = 0, Max = 180, Default = 45 })
-AntiAim:Divider()
-AntiAim:Toggle({ Name = "Fake Duck", Default = false })
-AntiAim:Toggle({ Name = "Freestanding", Default = true })
-
-local Aim = LegitAim:Section({ Name = "Aim Assist", Icon = Icon("aimassist", "target"), Side = 1 })
-Aim:Toggle({ Name = "Enabled", Default = true })
-Aim:Divider()
-Aim:Toggle({ Name = "Draw FOV", Default = true, Color = Color3.fromRGB(255, 255, 255) })
-Aim:Slider({ Name = "FOV", Min = 0, Max = 500, Default = 200, Suffix = "px" })
-Aim:Slider({ Name = "Smoothness", Min = 0, Max = 100, Default = 40, Suffix = "%" })
-Aim:Dropdown({ Name = "Hitpart", Options = { "Head", "Torso" }, Default = "Head" })
-Aim:Toggle({ Name = "Visible Only", Default = true })
-Aim:Toggle({ Name = "Team Check", Default = true })
-
-local Trigger = LegitTrigger:Section({ Name = "Triggerbot", Icon = Icon("trigger", "bullet"), Side = 1 })
-Trigger:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.T })
-Trigger:Divider()
-Trigger:Slider({ Name = "Reaction Delay", Min = 0, Max = 500, Default = 60, Suffix = "ms" })
-Trigger:Toggle({ Name = "Magnet Trigger", Default = false })
-Trigger:Slider({ Name = "Magnet FOV", Min = 0, Max = 100, Default = 25 })
-Trigger:Toggle({ Name = "Head Only", Default = true })
 
 local EspState = { Enabled = false, TeamCheck = false, LimitDistance = false, MaxDistance = 1000, Font = "Inter", Elements = {} }
 do
@@ -831,19 +754,20 @@ do
 	local WHITE = Color3.fromRGB(255, 255, 255)
 
 	local ELEMENTS = {
-		{ Key = "Box", Section = "Cosmetics", Name = "Box", Gradient = true, Rotation = 0,
+		{ Key = "Box", Section = "Main", Name = "Box", Gradient = true, Rotation = 0,
 			Colors = { WHITE, Color3.fromRGB(230, 160, 255), Color3.fromRGB(120, 90, 255) } },
-		{ Key = "BoxFill", Section = "Cosmetics", Name = "Box Fill", Gradient = true, Rotation = 90,
+		{ Key = "BoxFill", Section = "Main", Name = "Box Fill", Gradient = true, Rotation = 90,
 			Colors = { Color3.fromRGB(230, 160, 255), Color3.fromRGB(150, 110, 255), Color3.fromRGB(60, 40, 140) } },
-		{ Key = "Skeleton", Section = "Cosmetics", Name = "Skeleton", Color = WHITE },
-		{ Key = "HealthBar", Section = "Info", Name = "Health Bar", Gradient = true, Rotation = 90,
+		{ Key = "Skeleton", Section = "Main", Name = "Skeleton", Color = WHITE },
+		{ Key = "HealthBar", Section = "Main", Name = "Health Bar", Gradient = true, Rotation = 90,
 			Colors = { Color3.fromRGB(90, 255, 120), Color3.fromRGB(255, 220, 80), Color3.fromRGB(255, 70, 70) } },
-		{ Key = "AmmoBar", Section = "Info", Name = "Ammo Bar", Gradient = true, Rotation = 0,
+		{ Key = "AmmoBar", Section = "Main", Name = "Ammo Bar", Gradient = true, Rotation = 0,
 			Colors = { Color3.fromRGB(255, 220, 110), Color3.fromRGB(255, 170, 60), Color3.fromRGB(255, 110, 40) } },
-		{ Key = "HeadDot", Section = "Cosmetics", Name = "Head Dot", Color = Color3.fromRGB(230, 160, 255) },
-		{ Key = "Name", Section = "Info", Name = "Name", Color = WHITE },
-		{ Key = "Rank", Section = "Info", Name = "Rank", Color = Color3.fromRGB(255, 215, 120) },
-		{ Key = "Weapon", Section = "Info", Name = "Weapon", Color = Color3.fromRGB(205, 205, 205) },
+		{ Key = "HeadDot", Section = "Main", Name = "Head Dot", Color = Color3.fromRGB(230, 160, 255) },
+		{ Key = "Name", Section = "Main", Name = "Name", Color = WHITE },
+		{ Key = "Rank", Section = "Main", Name = "Rank", Color = Color3.fromRGB(255, 215, 120) },
+		{ Key = "Weapon", Section = "Main", Name = "Weapon", Color = Color3.fromRGB(205, 205, 205) },
+		{ Key = "Chams", Section = "Main", Name = "Chams", Color = Color3.fromRGB(230, 160, 255) },
 		{ Key = "Staring", Section = "Info", Name = "Staring", Color = Color3.fromRGB(255, 90, 90) },
 	}
 
@@ -857,9 +781,8 @@ do
 
 	local mainSection = EspMain:Section({ Name = "Main", Icon = Icon("esp", "smile"), Side = 1 })
 	local infoSection = EspInfo:Section({ Name = "Info", Icon = Icon("esp", "smile"), Side = 1 })
-	local infoPreview = EspInfo:Section({ Name = "Preview", Icon = Icon("preview", "smile"), Side = 2 })
+	local mainPreview = EspMain:Section({ Name = "Preview", Icon = Icon("preview", "smile"), Side = 2 })
 	local worldSection = EspWorld:Section({ Name = "World", Icon = Icon("world", "globe"), Side = 1 })
-	local cosmeticsSection = EspCosmetics:Section({ Name = "Cosmetics", Icon = Icon("preview", "smile"), Side = 1 })
 	local cosmeticsPreview = EspCosmetics:Section({ Name = "Preview", Icon = Icon("preview", "smile"), Side = 2 })
 
 	mainSection:Toggle({ Name = "Enabled", Default = false, Callback = function(value) EspState.Enabled = value end })
@@ -878,7 +801,7 @@ do
 	end
 
 	for _, def in ipairs(ELEMENTS) do
-		local espSection = def.Section == "Info" and infoSection or cosmeticsSection
+		local espSection = def.Section == "Info" and infoSection or mainSection
 		local element = {
 			Enabled = false, Color = def.Color, Colors = def.Colors and table.clone(def.Colors),
 			Animate = false, Rotation = def.Rotation or 0, Speed = 1, Gradient = def.Gradient,
@@ -1180,7 +1103,7 @@ do
 			rankLabel.Position = UDim2.new(0.5, 0, 0, topOffset)
 		end)
 	end
-	buildPreview(infoPreview)
+	buildPreview(mainPreview)
 	buildPreview(cosmeticsPreview)
 end
 
@@ -1310,6 +1233,8 @@ do
 			entry.Bones[index] = line
 		end
 
+		entry.Chams = make("Highlight", { Enabled = false, FillTransparency = 0.5, OutlineTransparency = 0, DepthMode = Enum.HighlightDepthMode.AlwaysOnTop }, gui)
+
 		entry.Dot = box("HeadDot", skeleton, 7)
 		entry.Dot.AnchorPoint = Vector2.new(0.5, 0.5)
 		entry.Dot.Size = UDim2.fromOffset(7, 7)
@@ -1323,6 +1248,7 @@ do
 	local function hide(entry)
 		entry.Root.Visible = false
 		entry.Skeleton.Visible = false
+		entry.Chams.Enabled = false
 	end
 
 	local function readNumber(instance, names)
@@ -1392,6 +1318,11 @@ do
 		entry.Root.Position = UDim2.fromOffset(x, y)
 		entry.Root.Size = UDim2.fromOffset(math.floor(width), math.floor(height))
 		entry.Root.Visible = true
+
+		entry.Chams.Adornee = character
+		entry.Chams.FillColor = E.Chams.Color
+		entry.Chams.OutlineColor = E.Chams.Color
+		entry.Chams.Enabled = E.Chams.Enabled
 
 		entry.Fill.Visible = E.BoxFill.Enabled
 		if E.BoxFill.Enabled then paint(entry.FillGradient, E.BoxFill) end
@@ -1486,6 +1417,7 @@ do
 		if entry then
 			entry.Root:Destroy()
 			entry.Skeleton:Destroy()
+			entry.Chams:Destroy()
 			entries[player] = nil
 		end
 	end)
@@ -1519,31 +1451,206 @@ do
 	end)
 end
 
-MiscCharacter:Section({ Name = "Character", Icon = Icon("character", "smile"), Side = 1 }):Label({ Name = "Nothing here yet" })
-MiscWeapons:Section({ Name = "Weapon Mods", Icon = Icon("weaponmods", "wrench"), Side = 1 }):Label({ Name = "Nothing here yet" })
-MiscAutomation:Section({ Name = "Automation", Icon = Icon("automation", "robot"), Side = 1 }):Label({ Name = "Nothing here yet" })
+local AimState = { Enabled = false, Fov = 120, DrawFov = true, FovColor = Color3.fromRGB(230, 160, 255), Smoothing = 35, AimPoint = "Head", TeamCheck = true, WallCheck = true, MaxDistance = 1000 }
+do
+	local RunService = game:GetService("RunService")
+	local Players = game:GetService("Players")
+	local localPlayer = Players.LocalPlayer
+	local playerGui = localPlayer:WaitForChild("PlayerGui")
 
-local World = EffectsLocal:Section({ Name = "Local", Icon = Icon("local", "smile"), Side = 1 })
-World:Toggle({ Name = "Remove Flash", Default = false })
-World:Toggle({ Name = "Third Person", Default = false })
-World:Slider({ Name = "Third Person Distance", Min = 0, Max = 30, Default = 12 })
-World:Slider({ Name = "Ratio", Min = 0, Max = 200, Default = 100 })
+	local old = playerGui:FindFirstChild("ParanoiaAimbot")
+	if old then old:Destroy() end
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "ParanoiaAimbot"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 40
+	gui.Parent = playerGui
 
-local Lighting = EffectsWorld:Section({ Name = "World", Icon = Icon("world", "globe"), Side = 1 })
-Lighting:Toggle({ Name = "Ambience", Default = false, Color = Color3.fromRGB(180, 200, 255) })
-Lighting:Toggle({ Name = "Fog", Default = false })
-Lighting:Slider({ Name = "Fog Start", Min = 0, Max = 1000, Default = 100 })
-Lighting:Slider({ Name = "Fog End", Min = 0, Max = 1000, Default = 800 })
-Lighting:Slider({ Name = "Clock Time", Min = 0, Max = 24, Default = 14 })
+	local circle = Instance.new("Frame")
+	circle.AnchorPoint = Vector2.new(0.5, 0.5)
+	circle.BackgroundTransparency = 1
+	circle.Visible = false
+	circle.Parent = gui
+	local circleCorner = Instance.new("UICorner")
+	circleCorner.CornerRadius = UDim.new(1, 0)
+	circleCorner.Parent = circle
+	local circleStroke = Instance.new("UIStroke")
+	circleStroke.Thickness = 1
+	circleStroke.Parent = circle
 
-local Move = MovementMain:Section({ Name = "Movement", Icon = Icon("speed", "smile"), Side = 1 })
-Move:Toggle({ Name = "Speed", Default = true })
-Move:Slider({ Name = "Speed Amount", Min = 16, Max = 200, Default = 50 })
-Move:Dropdown({ Name = "Speed Type", Options = { "WalkSpeed", "CFrame", "Velocity" }, Default = "WalkSpeed" })
-Move:Divider()
-Move:Toggle({ Name = "Fly", Default = true, Keybind = Enum.KeyCode.F })
-Move:Slider({ Name = "Fly Speed", Min = 1, Max = 300, Default = 60 })
-Move:Toggle({ Name = "NoClip", Default = false, Keybind = Enum.KeyCode.N })
+	local section = AimbotTab:Section({ Name = "Aimbot", Icon = Icon("aimassist", "target"), Side = 1 })
+	section:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.UserInputType.MouseButton2, KeybindMode = "Hold", Callback = function(value) AimState.Enabled = value end })
+	section:Dropdown({ Name = "Aim Point", Options = { "Head", "Torso", "Closest" }, Default = "Head", Callback = function(value) AimState.AimPoint = value end })
+	section:Slider({ Name = "Smoothing", Min = 0, Max = 95, Default = AimState.Smoothing, Suffix = "%", Callback = function(value) AimState.Smoothing = value end })
+	section:Toggle({ Name = "Team Check", Default = true, Callback = function(value) AimState.TeamCheck = value end })
+	section:Toggle({ Name = "Wall Check", Default = true, Callback = function(value) AimState.WallCheck = value end })
+	section:Slider({ Name = "Max Distance", Min = 50, Max = 5000, Default = AimState.MaxDistance, Suffix = " studs", Callback = function(value) AimState.MaxDistance = value end })
+	local fovSection = AimbotTab:Section({ Name = "FOV", Icon = Icon("targeting", "bullet"), Side = 2 })
+	fovSection:Slider({ Name = "FOV Size", Min = 10, Max = 800, Default = AimState.Fov, Suffix = "px", Callback = function(value) AimState.Fov = value end })
+	fovSection:Toggle({ Name = "Draw FOV", Default = true, Color = AimState.FovColor, ColorCallback = function(color) AimState.FovColor = color end, Callback = function(value) AimState.DrawFov = value end })
+
+	local function hitPart(character)
+		local mode = AimState.AimPoint
+		if mode == "Torso" then
+			return character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso") or character:FindFirstChild("HumanoidRootPart")
+		end
+		return character:FindFirstChild("Head")
+	end
+
+	local function visible(camera, part, character)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { localPlayer.Character, character }
+		local origin = camera.CFrame.Position
+		local result = workspace:Raycast(origin, part.Position - origin, params)
+		return result == nil
+	end
+
+	local function pickTarget(camera, center)
+		local best, bestPart, bestDistance = nil, nil, AimState.Fov
+		for _, player in ipairs(Players:GetPlayers()) do
+			local character = player ~= localPlayer and player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if humanoid and humanoid.Health > 0 and not (AimState.TeamCheck and player.Team ~= nil and player.Team == localPlayer.Team) then
+				local parts = {}
+				if AimState.AimPoint == "Closest" then
+					for _, name in ipairs({ "Head", "UpperTorso", "Torso", "HumanoidRootPart" }) do
+						local part = character:FindFirstChild(name)
+						if part then table.insert(parts, part) end
+					end
+				else
+					local part = hitPart(character)
+					if part then parts[1] = part end
+				end
+				for _, part in ipairs(parts) do
+					local point, onScreen = camera:WorldToViewportPoint(part.Position)
+					if onScreen and (part.Position - camera.CFrame.Position).Magnitude <= AimState.MaxDistance then
+						local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
+						if distance < bestDistance and (not AimState.WallCheck or visible(camera, part, character)) then
+							best, bestPart, bestDistance = player, part, distance
+						end
+					end
+				end
+			end
+		end
+		return best, bestPart
+	end
+
+	RunService.RenderStepped:Connect(function()
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+		local viewport = camera.ViewportSize
+		local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
+		circle.Visible = AimState.DrawFov and AimState.Enabled
+		circle.Position = UDim2.fromOffset(center.X, center.Y)
+		circle.Size = UDim2.fromOffset(AimState.Fov * 2, AimState.Fov * 2)
+		circleStroke.Color = AimState.FovColor
+		if not AimState.Enabled then return end
+		local _, part = pickTarget(camera, center)
+		if not part then return end
+		local alpha = 1 - AimState.Smoothing / 100
+		if mousemoverel then
+			local point = camera:WorldToViewportPoint(part.Position)
+			mousemoverel((point.X - center.X) * alpha, (point.Y - center.Y) * alpha)
+		else
+			local goal = CFrame.new(camera.CFrame.Position, part.Position)
+			camera.CFrame = camera.CFrame:Lerp(goal, alpha)
+		end
+	end)
+end
+
+do
+	local RunService = game:GetService("RunService")
+	local Lighting = game:GetService("Lighting")
+	local Players = game:GetService("Players")
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local camera = VisualsTab:Section({ Name = "Camera", Icon = Icon("local", "smile"), Side = 1 })
+	local fov = { Enabled = false, Value = 90 }
+	camera:Toggle({ Name = "Field Of View", Default = false, Callback = function(value) fov.Enabled = value end })
+	camera:Slider({ Name = "FOV", Min = 30, Max = 120, Default = 90, Callback = function(value) fov.Value = value end })
+
+	local crosshair = { Enabled = false, Color = Color3.fromRGB(230, 160, 255), Length = 8, Gap = 4, Thickness = 2 }
+	camera:Divider()
+	camera:Toggle({ Name = "Crosshair", Default = false, Color = crosshair.Color, ColorCallback = function(color) crosshair.Color = color end, Callback = function(value) crosshair.Enabled = value end })
+	camera:Slider({ Name = "Crosshair Length", Min = 1, Max = 30, Default = crosshair.Length, Callback = function(value) crosshair.Length = value end })
+	camera:Slider({ Name = "Crosshair Gap", Min = 0, Max = 30, Default = crosshair.Gap, Callback = function(value) crosshair.Gap = value end })
+	camera:Slider({ Name = "Crosshair Thickness", Min = 1, Max = 6, Default = crosshair.Thickness, Callback = function(value) crosshair.Thickness = value end })
+
+	local old = playerGui:FindFirstChild("ParanoiaCrosshair")
+	if old then old:Destroy() end
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "ParanoiaCrosshair"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 41
+	gui.Parent = playerGui
+	local lines = {}
+	for index = 1, 4 do
+		local line = Instance.new("Frame")
+		line.BorderSizePixel = 0
+		line.AnchorPoint = Vector2.new(0.5, 0.5)
+		line.Visible = false
+		line.Parent = gui
+		lines[index] = line
+	end
+
+	local lighting = { Enabled = false, Time = 14, Brightness = 2, Fog = false, FogStart = 100, FogEnd = 800, Ambient = Color3.fromRGB(120, 120, 140) }
+	local world = VisualsTab:Section({ Name = "Lighting", Icon = Icon("world", "globe"), Side = 2 })
+	world:Toggle({ Name = "Override Lighting", Default = false, Callback = function(value) lighting.Enabled = value end })
+	world:Slider({ Name = "Clock Time", Min = 0, Max = 24, Default = lighting.Time, Decimals = 1, Callback = function(value) lighting.Time = value end })
+	world:Slider({ Name = "Brightness", Min = 0, Max = 10, Default = lighting.Brightness, Decimals = 1, Callback = function(value) lighting.Brightness = value end })
+	world:Toggle({ Name = "Ambient", Default = false, Color = lighting.Ambient, ColorCallback = function(color) lighting.Ambient = color end, Callback = function(value) lighting.UseAmbient = value end })
+	world:Toggle({ Name = "Fog", Default = false, Callback = function(value) lighting.Fog = value end })
+	world:Slider({ Name = "Fog Start", Min = 0, Max = 2000, Default = lighting.FogStart, Callback = function(value) lighting.FogStart = value end })
+	world:Slider({ Name = "Fog End", Min = 10, Max = 5000, Default = lighting.FogEnd, Callback = function(value) lighting.FogEnd = value end })
+
+	local original
+	RunService.RenderStepped:Connect(function()
+		local cam = workspace.CurrentCamera
+		if cam and fov.Enabled then cam.FieldOfView = fov.Value end
+
+		local show = crosshair.Enabled and cam ~= nil
+		for _, line in ipairs(lines) do line.Visible = show end
+		if show then
+			local size = cam.ViewportSize
+			local cx, cy = math.floor(size.X / 2), math.floor(size.Y / 2)
+			local offset = crosshair.Gap + crosshair.Length / 2
+			local specs = {
+				{ cx, cy - offset, crosshair.Thickness, crosshair.Length },
+				{ cx, cy + offset, crosshair.Thickness, crosshair.Length },
+				{ cx - offset, cy, crosshair.Length, crosshair.Thickness },
+				{ cx + offset, cy, crosshair.Length, crosshair.Thickness },
+			}
+			for index, spec in ipairs(specs) do
+				local line = lines[index]
+				line.Position = UDim2.fromOffset(spec[1], spec[2])
+				line.Size = UDim2.fromOffset(spec[3], spec[4])
+				line.BackgroundColor3 = crosshair.Color
+			end
+		end
+
+		if lighting.Enabled then
+			if not original then
+				original = { ClockTime = Lighting.ClockTime, Brightness = Lighting.Brightness, FogStart = Lighting.FogStart, FogEnd = Lighting.FogEnd, Ambient = Lighting.Ambient, OutdoorAmbient = Lighting.OutdoorAmbient }
+			end
+			Lighting.ClockTime = lighting.Time
+			Lighting.Brightness = lighting.Brightness
+			if lighting.UseAmbient then
+				Lighting.Ambient = lighting.Ambient
+				Lighting.OutdoorAmbient = lighting.Ambient
+			end
+			if lighting.Fog then
+				Lighting.FogStart = lighting.FogStart
+				Lighting.FogEnd = lighting.FogEnd
+			end
+		elseif original then
+			for property, value in pairs(original) do Lighting[property] = value end
+			original = nil
+		end
+	end)
+end
 
 Window:BuildSettings(Settings)
 finishNav()
