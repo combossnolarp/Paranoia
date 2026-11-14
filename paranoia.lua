@@ -121,7 +121,7 @@ if not Blossom then
 
 		src = replacePlain(src,
 			"\tbutton.MouseButton1Click:Connect(function()\n\t\tobject.Listening = true\n\t\twin.Listening = object\n\t\tobject.Refresh()\n\tend)\n\tbutton.MouseButton2Click:Connect(function() win:OpenKeybindMenu(chip, object) end)",
-			"\tfunction object.StartListening()\n\t\tobject.Listening = true\n\t\twin.Listening = object\n\t\tobject.Refresh()\n\tend\n\tbutton.MouseButton1Click:Connect(function() win:OpenKeybindMenu(chip, object) end)\n\tbutton.MouseButton2Click:Connect(function() win:OpenKeybindMenu(chip, object) end)")
+			"\tfunction object.StartListening()\n\t\tobject.Listening = true\n\t\twin.Listening = object\n\t\tobject.Refresh()\n\tend\n\tlocal holdId, held = 0, false\n\tbutton.MouseButton1Down:Connect(function()\n\t\tholdId += 1\n\t\theld = false\n\t\tlocal id = holdId\n\t\ttask.delay(0.35, function()\n\t\t\tif holdId == id and button.Parent then\n\t\t\t\theld = true\n\t\t\t\twin:OpenKeybindMenu(chip, object)\n\t\t\tend\n\t\tend)\n\tend)\n\tbutton.MouseButton1Up:Connect(function() holdId += 1 end)\n\tbutton.MouseLeave:Connect(function() holdId += 1 end)\n\tbutton.TouchLongPress:Connect(function(_, state)\n\t\tif state == Enum.UserInputState.Begin and not held then\n\t\t\theld = true\n\t\t\twin:OpenKeybindMenu(chip, object)\n\t\tend\n\tend)\n\tbutton.MouseButton1Click:Connect(function()\n\t\tif held then held = false return end\n\t\twin:OpenKeybindMenu(chip, object)\n\tend)\n\tbutton.MouseButton2Click:Connect(function() win:OpenKeybindMenu(chip, object) end)")
 
 		src = replacePlain(src,
 			"\t\t\tif toggle.Keybind.Mode == \"Hold\" then toggle:Set(true) else toggle:Set(not toggle.Value) end\n\t\tend\n\t\ttoggle.Keybind.OnRelease = function()\n\t\t\tif toggle.Keybind.Mode == \"Hold\" then toggle:Set(false) end\n\t\tend",
@@ -733,23 +733,23 @@ local function finishNav()
 end
 
 Category("Combat")
-local RageMain, RageSilent, RageAntiAim = Group({ Name = "Rage", Icon = Icon("rage", "target") }, {
+local RageMain, RageAntiAim = Group({ Name = "Rage", Icon = Icon("rage", "target") }, {
 	{ Name = "Ragebot", Icon = Icon("ragebot", "robot") },
-	{ Name = "Silent Aim", Icon = Icon("silent", "bullet") },
 	{ Name = "Anti Aim", Icon = Icon("antiaim", "wrench") },
 })
-local LegitAim, LegitRecoil, LegitTrigger = Group({ Name = "Legit", Icon = Icon("legit", "bullet") }, {
+local LegitAim, LegitSilent, LegitTrigger = Group({ Name = "Legit", Icon = Icon("legit", "bullet") }, {
 	{ Name = "Aim Assist", Icon = Icon("aimassist", "target") },
-	{ Name = "Recoil", Icon = Icon("recoil", "wrench") },
+	{ Name = "Silent Aim", Icon = Icon("silent", "bullet") },
 	{ Name = "Triggerbot", Icon = Icon("trigger", "bullet") },
 })
 Category("Visuals")
-local EspInfo, EspWorld, EspCosmetics = Group({ Name = "ESP", Icon = Icon("esp", "smile") }, {
+local EspMain, EspInfo, EspWorld, EspCosmetics = Group({ Name = "ESP", Icon = Icon("esp", "smile") }, {
+	{ Name = "Main", Icon = Icon("esp", "smile") },
 	{ Name = "Info", Icon = Icon("esp", "smile") },
 	{ Name = "World", Icon = Icon("world", "globe") },
 	{ Name = "Cosmetics", Icon = Icon("preview", "smile") },
 })
-local EffectsLocal, EffectsWorld = Group({ Name = "Effects", Icon = Icon("effects", "globe") }, {
+local EffectsLocal, EffectsWorld = Group({ Name = "Visuals", Icon = Icon("effects", "globe") }, {
 	{ Name = "Local", Icon = Icon("local", "smile") },
 	{ Name = "World", Icon = Icon("world", "globe") },
 })
@@ -760,12 +760,9 @@ local MiscCharacter, MiscWeapons, MiscAutomation = Group({ Name = "Misc", Icon =
 	{ Name = "Automation", Icon = Icon("automation", "robot") },
 })
 Category("Player")
-local MovementMain, MovementHop = Group({ Name = "Movement", Icon = Icon("movement", "smile") }, {
-	{ Name = "Speed & Fly", Icon = Icon("speed", "smile") },
-	{ Name = "Bunny Hop", Icon = Icon("bhop", "smile") },
+local MovementMain = Group({ Name = "Movement", Icon = Icon("movement", "smile") }, {
+	{ Name = "Character", Icon = Icon("speed", "smile") },
 })
-local Exploits = Tab({ Name = "Exploits", Icon = Icon("exploits", "bomb") })
-local Plugins = Tab({ Name = "Plugins", Icon = Icon("plugins", "file") })
 local Settings = Tab({ Name = "Settings", Icon = Icon("settings", "gear") })
 
 local Ragebot = RageMain:Section({ Name = "Ragebot", Icon = Icon("ragebot", "robot"), Side = 1 })
@@ -787,7 +784,7 @@ Ragebot:Slider({ Name = "Max Distance", Min = 0, Max = 2000, Default = 798, Suff
 local Targeting = RageMain:Section({ Name = "Targeting", Icon = Icon("targeting", "bullet"), Side = 2 })
 Targeting:Dropdown({ Name = "Hitboxes", Options = { "Head", "Torso", "Arms", "Legs" }, Default = { "Head", "Torso" }, Multi = true })
 
-local Silent = RageSilent:Section({ Name = "Silent Aim", Icon = Icon("silent", "bullet"), Side = 1 })
+local Silent = LegitSilent:Section({ Name = "Silent Aim", Icon = Icon("silent", "bullet"), Side = 1 })
 Silent:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.V })
 Silent:Divider()
 Silent:Toggle({ Name = "Use FOV", Default = true })
@@ -820,10 +817,6 @@ Aim:Dropdown({ Name = "Hitpart", Options = { "Head", "Torso" }, Default = "Head"
 Aim:Toggle({ Name = "Visible Only", Default = true })
 Aim:Toggle({ Name = "Team Check", Default = true })
 
-local Recoil = LegitRecoil:Section({ Name = "Recoil Control", Icon = Icon("recoil", "wrench"), Side = 1 })
-Recoil:Toggle({ Name = "Enabled", Default = false })
-Recoil:Slider({ Name = "Vertical", Min = 0, Max = 100, Default = 70, Suffix = "%" })
-
 local Trigger = LegitTrigger:Section({ Name = "Triggerbot", Icon = Icon("trigger", "bullet"), Side = 1 })
 Trigger:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.T })
 Trigger:Divider()
@@ -851,6 +844,7 @@ do
 		{ Key = "Name", Section = "Info", Name = "Name", Color = WHITE },
 		{ Key = "Rank", Section = "Info", Name = "Rank", Color = Color3.fromRGB(255, 215, 120) },
 		{ Key = "Weapon", Section = "Info", Name = "Weapon", Color = Color3.fromRGB(205, 205, 205) },
+		{ Key = "Staring", Section = "Info", Name = "Staring", Color = Color3.fromRGB(255, 90, 90) },
 	}
 
 	local function setShown(object, shown)
@@ -861,15 +855,15 @@ do
 		item.Section:Layout(true)
 	end
 
+	local mainSection = EspMain:Section({ Name = "Main", Icon = Icon("esp", "smile"), Side = 1 })
 	local infoSection = EspInfo:Section({ Name = "Info", Icon = Icon("esp", "smile"), Side = 1 })
 	local infoPreview = EspInfo:Section({ Name = "Preview", Icon = Icon("preview", "smile"), Side = 2 })
 	local worldSection = EspWorld:Section({ Name = "World", Icon = Icon("world", "globe"), Side = 1 })
 	local cosmeticsSection = EspCosmetics:Section({ Name = "Cosmetics", Icon = Icon("preview", "smile"), Side = 1 })
 	local cosmeticsPreview = EspCosmetics:Section({ Name = "Preview", Icon = Icon("preview", "smile"), Side = 2 })
 
-	worldSection:Toggle({ Name = "Enabled", Default = false, Callback = function(value) EspState.Enabled = value end })
-	worldSection:Toggle({ Name = "Team Check", Default = false, Callback = function(value) EspState.TeamCheck = value end })
-	worldSection:Divider()
+	mainSection:Toggle({ Name = "Enabled", Default = false, Callback = function(value) EspState.Enabled = value end })
+	mainSection:Toggle({ Name = "Team Check", Default = false, Callback = function(value) EspState.TeamCheck = value end })
 	local maxDistance
 	worldSection:Toggle({ Name = "Limit Distance", Default = false, Callback = function(value)
 		EspState.LimitDistance = value
@@ -937,8 +931,7 @@ do
 		refresh()
 	end
 
-	infoSection:Divider()
-	infoSection:Dropdown({ Name = "ESP Font", Options = FontList, Default = "Inter", MaxRows = 12, Callback = function(value)
+	mainSection:Dropdown({ Name = "ESP Font", Options = FontList, Default = "Inter", MaxRows = 12, Callback = function(value)
 		EspState.Font = value
 		applyPreviewFont()
 	end })
@@ -1301,6 +1294,7 @@ do
 		entry.Rank = newLabel(root, 11)
 		entry.Weapon = newLabel(root, 11)
 		entry.Weapon.AnchorPoint = Vector2.new(0.5, 0)
+		entry.Staring = newLabel(root, 11)
 
 		local skeleton = box("Skeleton", gui, 6)
 		skeleton.Size = UDim2.fromScale(1, 1)
@@ -1368,7 +1362,7 @@ do
 
 	local appliedFont
 	local function applyFonts(entry, face)
-		for _, label in ipairs({ entry.Name, entry.Rank, entry.Weapon }) do
+		for _, label in ipairs({ entry.Name, entry.Rank, entry.Weapon, entry.Staring }) do
 			if face then label.FontFace = face end
 		end
 	end
@@ -1423,11 +1417,29 @@ do
 		entry.Name.Visible = E.Name.Enabled
 		entry.Name.Text = player.DisplayName
 		entry.Name.TextColor3 = E.Name.Color
-		entry.Name.Position = UDim2.new(0.5, 0, 0, -3)
+		local stack = -3
+		entry.Name.Position = UDim2.new(0.5, 0, 0, stack)
+		if E.Name.Enabled then stack -= 14 end
 		entry.Rank.Visible = rank ~= nil
 		entry.Rank.Text = rank or ""
 		entry.Rank.TextColor3 = E.Rank.Color
-		entry.Rank.Position = UDim2.new(0.5, 0, 0, E.Name.Enabled and -17 or -3)
+		entry.Rank.Position = UDim2.new(0.5, 0, 0, stack)
+		if rank then stack -= 14 end
+		local staring = false
+		if E.Staring.Enabled then
+			local head = character:FindFirstChild("Head")
+			local myCharacter = localPlayer.Character
+			local myHead = myCharacter and myCharacter:FindFirstChild("Head")
+			local target = myHead and myHead.Position or camera.CFrame.Position
+			if head then
+				local toMe = target - head.Position
+				staring = toMe.Magnitude > 0.1 and head.CFrame.LookVector:Dot(toMe.Unit) > 0.96
+			end
+		end
+		entry.Staring.Visible = staring
+		entry.Staring.Text = "Staring"
+		entry.Staring.TextColor3 = E.Staring.Color
+		entry.Staring.Position = UDim2.new(0.5, 0, 0, stack)
 		entry.Weapon.Visible = E.Weapon.Enabled and weapon ~= nil
 		entry.Weapon.Text = weapon or ""
 		entry.Weapon.TextColor3 = E.Weapon.Color
@@ -1532,17 +1544,6 @@ Move:Divider()
 Move:Toggle({ Name = "Fly", Default = true, Keybind = Enum.KeyCode.F })
 Move:Slider({ Name = "Fly Speed", Min = 1, Max = 300, Default = 60 })
 Move:Toggle({ Name = "NoClip", Default = false, Keybind = Enum.KeyCode.N })
-
-local Hop = MovementHop:Section({ Name = "Bunny Hop", Icon = Icon("bhop", "smile"), Side = 1 })
-Hop:Toggle({ Name = "Enabled", Default = false })
-Hop:Dropdown({ Name = "Mode", Options = { "Auto Strafe", "Legit" }, Default = "Auto Strafe" })
-Hop:Slider({ Name = "Strafe Strength", Min = 0, Max = 100, Default = 40, Suffix = "%" })
-
-local ExploitMain = Exploits:Section({ Name = "Main", Icon = Icon("exploits", "bomb"), Side = 1 })
-ExploitMain:Toggle({ Name = "Double Tap", Default = false })
-ExploitMain:Toggle({ Name = "Hide Shots", Default = false })
-
-Plugins:Section({ Name = "Plugins", Icon = Icon("plugins", "file"), Side = 1 }):Label({ Name = "No plugins loaded" })
 
 Window:BuildSettings(Settings)
 finishNav()
@@ -1997,7 +1998,6 @@ local function applyMobileFont(panel)
 	end
 end
 
--- A button styled like the Toggle UI button: uses the menu font and glows in the menu accent while pressed.
 local function createPanelButton(parent, text, position)
 	local button = Instance.new("TextButton")
 	button.Size = UDim2.new(0, 108, 0, 32)
@@ -2096,7 +2096,6 @@ do
 	end
 end
 
--- Toggle UI button
 local toggleBtn
 local open = false
 local toggleUI = createPanelButton(gui, "Toggle UI", UDim2.new(0, 14, 0.5, -16))
@@ -2128,7 +2127,6 @@ end
 toggleBtn.MouseButton1Click:Connect(onClick)
 toggleBtn.TouchTap:Connect(onClick)
 
--- Mobile buttons for keybinds, spawned from the keybind menu (Toggle and Hold modes only).
 local function removeMobileButton(bind)
 	local panel = bind.MobileButton
 	if not panel then return end
@@ -2162,7 +2160,6 @@ local function spawnMobileButton(bind)
 		if Window.Visible or bind.Mode == "Always" then return end
 		if bind.OnRelease then bind.OnRelease() end
 	end
-	-- While the menu is open the button can be dragged into place instead of pressed.
 	local connection
 	connection = RunService.RenderStepped:Connect(function()
 		if not panel.Button.Parent then
