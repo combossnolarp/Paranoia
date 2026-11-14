@@ -6,18 +6,30 @@ local ICON_KEYS = {
 	"rage", "ragebot", "silent", "antiaim", "targeting", "legit", "aimassist", "recoil", "trigger",
 	"players", "effects", "local", "world", "movement", "speed", "bhop", "exploits", "plugins", "settings",
 	"profiles", "autoload", "theming", "menu", "background",
+	"esp", "preview", "misc", "character", "weaponmods", "automation",
 }
 local ASSET_LIST = {
 	"logo_base.png", "logo_tint.png", "logo_anim_base.png", "logo_anim_tint.png",
 	"fx/snow.png", "fx/flake.png", "fx/petal.png", "fx/blossom.png", "fx/leaf.png", "fx/rain.png", "fx/star.png", "fx/glow.png",
+	"esp/preview.png", "fonts/Anton-Regular.ttf",
 }
 for _, key in ipairs(ICON_KEYS) do
 	table.insert(ASSET_LIST, "icons/" .. key .. ".png")
 end
 
 local Assets = {}
+local AssetFiles = {}
+local GetAsset = getcustomasset or getsynasset
+
+local function validAsset(path, data)
+	if type(data) ~= "string" or #data < 4 then return false end
+	if string.sub(path, -4) == ".png" then return string.sub(data, 2, 4) == "PNG" end
+	local magic = string.sub(data, 1, 4)
+	return magic == "\0\1\0\0" or magic == "OTTO" or magic == "true"
+end
+
 do
-	local getAsset = getcustomasset or getsynasset
+	local getAsset = GetAsset
 	if getAsset and writefile and isfile then
 		pcall(function()
 			if makefolder and isfolder then
@@ -33,12 +45,15 @@ do
 				local ok, result = pcall(function()
 					if not isfile(file) then
 						local data = game:HttpGet(ASSET_BASE .. path)
-						if type(data) ~= "string" or string.sub(data, 2, 4) ~= "PNG" then return nil end
+						if not validAsset(path, data) then return nil end
 						writefile(file, data)
 					end
 					return getAsset(file)
 				end)
-				if ok and result then Assets[path] = result end
+				if ok and result then
+					Assets[path] = result
+					AssetFiles[path] = file
+				end
 				pending -= 1
 			end)
 		end
@@ -78,6 +93,10 @@ if not Blossom then
 		src = replacePlain(src,
 			"label(item.Frame, { Text = options.Name, Truncate = Enum.TextTruncate.AtEnd })\n\toptions.Y = Metrics.DropdownH - Metrics.InputH\n\tlocal dropdown = buildDropdown(self.Window, item.Frame, options)\n\tdropdown.Item = item",
 			"item.Label = label(item.Frame, { Text = options.Name, Truncate = Enum.TextTruncate.AtEnd })\n\tlocal _, inlineColor = addInlineControls(self, item, options, options.Name)\n\toptions.Y = Metrics.DropdownH - Metrics.InputH\n\tlocal dropdown = buildDropdown(self.Window, item.Frame, options)\n\tdropdown.Item = item\n\tdropdown.ColorPicker = inlineColor")
+
+		src = replacePlain(src,
+			"\tlocal keybind, color\n\tif options.Color then\n",
+			"\tlocal keybind, color\n\tif options.Colors then\n\t\titem.ExtraColors = {}\n\t\tfor index = #options.Colors, 1, -1 do\n\t\t\titem.ExtraColors[index] = attachColor(section, item, { Default = options.Colors[index], Callback = options.ColorCallbacks and options.ColorCallbacks[index] })\n\t\tend\n\tend\n\tif options.Color then\n")
 
 		for name, key in pairs({ Profiles = "profiles", Autoload = "autoload", Theming = "theming", Menu = "menu" }) do
 			local asset = Icon(key)
@@ -134,6 +153,98 @@ if Themes and Themes.Blossom then
 end
 
 local Window = Blossom.new({ Title = "Paranoia", Script = "Paranoia", Build = "Rivals", Theme = "Paranoia" })
+
+local FontList = {}
+do
+	local HttpService = game:GetService("HttpService")
+	local fonts = Blossom.Fonts or {}
+	local BASE_FONTS = { "Inter", "Builder Sans", "Roboto", "Montserrat", "Source Sans Pro", "Ubuntu", "Nunito", "Arimo" }
+	local STYLE_FONTS = {
+		{ "Phantom Forces Style", "TitilliumWeb" },
+		{ "Call of Duty Style", "Sarpanch" },
+		{ "Borderlands Style", "Bangers" },
+		{ "Marshmello Style", "FredokaOne" },
+		{ "Minecraft Style", "Arcade" },
+		{ "Halo Style", "Michroma" },
+		{ "Valorant Style", "RobotoCondensed" },
+		{ "Cartoon", "LuckiestGuy" },
+		{ "Graffiti", "PermanentMarker" },
+		{ "Horror", "Creepster" },
+		{ "Typewriter", "SpecialElite" },
+		{ "Handwritten", "PatrickHand" },
+		{ "Gothic", "GrenzeGotisch" },
+	}
+
+	local function add(name, family)
+		if not family or family == "" then return end
+		fonts[name] = family
+		if not table.find(FontList, name) then table.insert(FontList, name) end
+	end
+
+	local function familyFromFile(name, fontFile)
+		if not (GetAsset and writefile) then return nil end
+		local ok, family = pcall(function()
+			local face = GetAsset(fontFile)
+			local jsonFile = ASSET_FOLDER .. "/family_" .. (string.gsub(name, "[^%w]", "_")) .. ".json"
+			writefile(jsonFile, HttpService:JSONEncode({
+				name = name,
+				faces = { { name = "Regular", weight = 400, style = "normal", assetId = face } },
+			}))
+			return GetAsset(jsonFile)
+		end)
+		return ok and family or nil
+	end
+
+	for _, name in ipairs(BASE_FONTS) do
+		if fonts[name] then table.insert(FontList, name) end
+	end
+
+	local customFonts = {}
+	pcall(function()
+		if not (listfiles and isfolder and makefolder) then return end
+		if not isfolder("Paranoia/fonts") then makefolder("Paranoia/fonts") end
+		for _, path in ipairs(listfiles("Paranoia/fonts")) do
+			local fileName = string.match(path, "([^/\\]+)$") or path
+			local base, extension = string.match(fileName, "^(.+)%.([%w]+)$")
+			extension = extension and string.lower(extension)
+			if base and (extension == "ttf" or extension == "otf") then
+				customFonts[base] = familyFromFile(base, path)
+			elseif base and (extension == "json" or extension == "font") then
+				local ok, family = pcall(GetAsset, path)
+				if ok and family then customFonts[base] = family end
+			end
+		end
+	end)
+
+	local fortnite = customFonts.Fortnite
+	if fortnite then
+		add("Fortnite", fortnite)
+		customFonts.Fortnite = nil
+	end
+	local antonFile = AssetFiles["fonts/Anton-Regular.ttf"]
+	local anton = antonFile and familyFromFile("Anton", antonFile)
+	if anton then
+		add("Fortnite Style", anton)
+	else
+		local ok, family = pcall(function() return Font.fromEnum(Enum.Font.Oswald).Family end)
+		if ok then add("Fortnite Style", family) end
+	end
+	for _, entry in ipairs(STYLE_FONTS) do
+		local ok, family = pcall(function() return Font.fromEnum(Enum.Font[entry[2]]).Family end)
+		if ok then add(entry[1], family) end
+	end
+	local names = {}
+	for name in pairs(customFonts) do table.insert(names, name) end
+	table.sort(names)
+	for _, name in ipairs(names) do add(name, customFonts[name]) end
+end
+
+local function fontFace(name, weight)
+	local family = (Blossom.Fonts or {})[name]
+	if not family then return nil end
+	local ok, face = pcall(Font.new, family, weight or Enum.FontWeight.Bold)
+	return ok and face or nil
+end
 
 local ANIM_FRAMES, ANIM_COLUMNS, ANIM_W, ANIM_H, ANIM_FRAME_TIME = 60, 6, 168, 89, 0.03
 
@@ -541,10 +652,16 @@ local LegitAim, LegitRecoil, LegitTrigger = Group({ Name = "Legit", Icon = Icon(
 	{ Name = "Triggerbot", Icon = Icon("trigger", "bullet") },
 })
 Category("Visuals")
-local PlayersTab = Tab({ Name = "Players", Icon = Icon("players", "smile") })
+local EspTab = Tab({ Name = "ESP", Icon = Icon("esp", "smile") })
 local EffectsLocal, EffectsWorld = Group({ Name = "Effects", Icon = Icon("effects", "globe") }, {
 	{ Name = "Local", Icon = Icon("local", "smile") },
 	{ Name = "World", Icon = Icon("world", "globe") },
+})
+Category("Misc")
+local MiscCharacter, MiscWeapons, MiscAutomation = Group({ Name = "Misc", Icon = Icon("misc", "cube") }, {
+	{ Name = "Character", Icon = Icon("character", "smile") },
+	{ Name = "Weapon Mods", Icon = Icon("weaponmods", "wrench") },
+	{ Name = "Automation", Icon = Icon("automation", "robot") },
 })
 Category("Player")
 local MovementMain, MovementHop = Group({ Name = "Movement", Icon = Icon("movement", "smile") }, {
@@ -619,11 +736,355 @@ Trigger:Toggle({ Name = "Magnet Trigger", Default = false })
 Trigger:Slider({ Name = "Magnet FOV", Min = 0, Max = 100, Default = 25 })
 Trigger:Toggle({ Name = "Head Only", Default = true })
 
-local PlayerESP = PlayersTab:Section({ Name = "Players", Icon = Icon("players", "smile"), Side = 1 })
-PlayerESP:Toggle({ Name = "Enabled", Default = false, Color = Color3.fromRGB(95, 136, 202) })
-PlayerESP:Toggle({ Name = "Names", Default = true })
-PlayerESP:Toggle({ Name = "Boxes", Default = true, Color = Color3.fromRGB(255, 255, 255) })
-PlayerESP:Toggle({ Name = "Health", Default = true })
+local EspState = { Enabled = false, LimitDistance = false, MaxDistance = 1000, Font = "Inter", Elements = {} }
+do
+	local RunService = game:GetService("RunService")
+	local WHITE = Color3.fromRGB(255, 255, 255)
+
+	local ELEMENTS = {
+		{ Key = "Box", Name = "Box", Gradient = true, Rotation = 0,
+			Colors = { WHITE, Color3.fromRGB(230, 160, 255), Color3.fromRGB(120, 90, 255) } },
+		{ Key = "BoxFill", Name = "Box Fill", Gradient = true, Rotation = 90,
+			Colors = { Color3.fromRGB(230, 160, 255), Color3.fromRGB(150, 110, 255), Color3.fromRGB(60, 40, 140) } },
+		{ Key = "Skeleton", Name = "Skeleton", Color = WHITE },
+		{ Key = "HealthBar", Name = "Health Bar", Gradient = true, Rotation = 90,
+			Colors = { Color3.fromRGB(90, 255, 120), Color3.fromRGB(255, 220, 80), Color3.fromRGB(255, 70, 70) } },
+		{ Key = "AmmoBar", Name = "Ammo Bar", Gradient = true, Rotation = 0,
+			Colors = { Color3.fromRGB(255, 220, 110), Color3.fromRGB(255, 170, 60), Color3.fromRGB(255, 110, 40) } },
+		{ Key = "HeadDot", Name = "Head Dot", Color = Color3.fromRGB(230, 160, 255) },
+		{ Key = "Name", Name = "Name", Color = WHITE },
+		{ Key = "Rank", Name = "Rank", Color = Color3.fromRGB(255, 215, 120) },
+		{ Key = "Weapon", Name = "Weapon", Color = Color3.fromRGB(205, 205, 205) },
+	}
+
+	local function setShown(object, shown)
+		local item = object and object.Item
+		if not item or item.Visible == shown then return end
+		item.Visible = shown
+		item.Frame.Visible = shown
+		item.Section:Layout(true)
+	end
+
+	local espSection = EspTab:Section({ Name = "ESP", Icon = Icon("esp", "smile"), Side = 1 })
+	local previewSection = EspTab:Section({ Name = "Preview", Icon = Icon("preview", "smile"), Side = 2 })
+
+	espSection:Toggle({ Name = "Enabled", Default = false, Callback = function(value) EspState.Enabled = value end })
+	espSection:Divider()
+
+	for _, def in ipairs(ELEMENTS) do
+		local element = {
+			Enabled = false, Color = def.Color, Colors = def.Colors and table.clone(def.Colors),
+			Animate = false, Rotation = def.Rotation or 0, Speed = 1, Gradient = def.Gradient,
+		}
+		EspState.Elements[def.Key] = element
+		local children = {}
+		local function refresh()
+			for _, child in ipairs(children) do
+				local shown = element.Enabled
+				if child.NeedsAnimate then shown = shown and element.Animate end
+				setShown(child.Object, shown)
+			end
+		end
+
+		if def.Gradient then
+			local callbacks = {}
+			for index = 1, 3 do
+				callbacks[index] = function(color) element.Colors[index] = color end
+			end
+			local toggle = espSection:Toggle({
+				Name = def.Name, Default = false, Colors = def.Colors, ColorCallbacks = callbacks,
+				Callback = function(value) element.Enabled = value; refresh() end,
+			})
+			local extra = toggle.Item and toggle.Item.ExtraColors
+			if extra then
+				if toggle.Flag then
+					for index, color in ipairs(extra) do
+						Window.Flags[toggle.Flag .. "/Color" .. index] = color
+					end
+				end
+			else
+				for index = 1, 3 do
+					local picker = espSection:Colorpicker({ Name = def.Name .. " Color " .. index, Default = def.Colors[index], Callback = callbacks[index] })
+					table.insert(children, { Object = picker })
+				end
+			end
+			local animate = espSection:Toggle({ Name = "Animate Gradient", Default = false, Callback = function(value) element.Animate = value; refresh() end })
+			table.insert(children, { Object = animate })
+			local rotation = espSection:Slider({ Name = "Rotation", Min = 0, Max = 360, Default = element.Rotation, Suffix = "°", Callback = function(value) element.Rotation = value end })
+			table.insert(children, { Object = rotation, NeedsAnimate = true })
+			local speed = espSection:Slider({ Name = "Speed", Min = 0.01, Max = 5, Default = 1, Decimals = 2, Suffix = " rps", Callback = function(value) element.Speed = value end })
+			table.insert(children, { Object = speed, NeedsAnimate = true })
+		else
+			espSection:Toggle({
+				Name = def.Name, Default = false, Color = def.Color,
+				ColorCallback = function(color) element.Color = color end,
+				Callback = function(value) element.Enabled = value; refresh() end,
+			})
+		end
+		refresh()
+	end
+
+	espSection:Divider()
+	local maxDistance
+	espSection:Toggle({ Name = "Limit Distance", Default = false, Callback = function(value)
+		EspState.LimitDistance = value
+		setShown(maxDistance, value)
+	end })
+	maxDistance = espSection:Slider({ Name = "Max Distance", Min = 1, Max = 100000, Default = EspState.MaxDistance, Suffix = " studs", Callback = function(value) EspState.MaxDistance = value end })
+	setShown(maxDistance, EspState.LimitDistance)
+
+	local applyPreviewFont
+	espSection:Dropdown({ Name = "ESP Font", Options = FontList, Default = "Inter", MaxRows = 12, Callback = function(value)
+		EspState.Font = value
+		if applyPreviewFont then applyPreviewFont() end
+	end })
+
+	local PREVIEW_H = 360
+	local item = previewSection:_item(PREVIEW_H, "Preview", nil, false)
+	local stage = Instance.new("Frame")
+	stage.Name = "EspPreview"
+	stage.Size = UDim2.fromScale(1, 1)
+	stage.BackgroundColor3 = Color3.new(0, 0, 0)
+	stage.BackgroundTransparency = 0.55
+	stage.BorderSizePixel = 0
+	stage.ClipsDescendants = true
+	stage.Parent = item.Frame
+	local stageCorner = Instance.new("UICorner")
+	stageCorner.CornerRadius = UDim.new(0, 4)
+	stageCorner.Parent = stage
+
+	local CHAR_H = PREVIEW_H - 96
+	local CHAR_W = math.floor(CHAR_H * 377 / 658)
+	local body = Instance.new("Frame")
+	body.Name = "Body"
+	body.BackgroundTransparency = 1
+	body.AnchorPoint = Vector2.new(0.5, 0.5)
+	body.Position = UDim2.new(0.5, 0, 0.5, 2)
+	body.Size = UDim2.fromOffset(CHAR_W, CHAR_H)
+	body.Parent = stage
+
+	local character = Instance.new("ImageLabel")
+	character.Name = "Character"
+	character.BackgroundTransparency = 1
+	character.Size = UDim2.fromScale(1, 1)
+	character.ScaleType = Enum.ScaleType.Fit
+	character.Image = Assets["esp/preview.png"] or ""
+	character.ZIndex = 2
+	character.Parent = body
+
+	local function frame(name, parent, zindex)
+		local f = Instance.new("Frame")
+		f.Name = name
+		f.BorderSizePixel = 0
+		f.BackgroundTransparency = 1
+		f.ZIndex = zindex or 3
+		f.Parent = parent
+		return f
+	end
+
+	local function gradient(parent)
+		local g = Instance.new("UIGradient")
+		g.Parent = parent
+		return g
+	end
+
+	local PAD = 5
+	local boxFill = frame("BoxFill", body, 1)
+	boxFill.Position = UDim2.fromOffset(-PAD, -PAD)
+	boxFill.Size = UDim2.new(1, PAD * 2, 1, PAD * 2)
+	boxFill.BackgroundColor3 = WHITE
+	boxFill.BackgroundTransparency = 0.72
+	local fillGradient = gradient(boxFill)
+
+	local box = frame("Box", body, 4)
+	box.Position = boxFill.Position
+	box.Size = boxFill.Size
+	local boxOutline = Instance.new("UIStroke")
+	boxOutline.Thickness = 3
+	boxOutline.Color = Color3.new(0, 0, 0)
+	boxOutline.Transparency = 0.2
+	boxOutline.Parent = box
+	local boxInner = frame("Inner", box, 5)
+	boxInner.Size = UDim2.fromScale(1, 1)
+	local boxStroke = Instance.new("UIStroke")
+	boxStroke.Thickness = 1
+	boxStroke.Color = WHITE
+	boxStroke.Parent = boxInner
+	local boxGradient = gradient(boxStroke)
+
+	local healthBack = frame("HealthBar", body, 4)
+	healthBack.BackgroundColor3 = Color3.new(0, 0, 0)
+	healthBack.BackgroundTransparency = 0.25
+	healthBack.Position = UDim2.fromOffset(-PAD - 7, -PAD - 1)
+	healthBack.Size = UDim2.new(0, 4, 1, PAD * 2 + 2)
+	local healthFill = frame("Fill", healthBack, 5)
+	healthFill.BackgroundColor3 = WHITE
+	healthFill.BackgroundTransparency = 0
+	healthFill.AnchorPoint = Vector2.new(0, 1)
+	healthFill.Position = UDim2.new(0, 1, 1, -1)
+	local healthGradient = gradient(healthFill)
+
+	local ammoBack = frame("AmmoBar", body, 4)
+	ammoBack.BackgroundColor3 = Color3.new(0, 0, 0)
+	ammoBack.BackgroundTransparency = 0.25
+	ammoBack.Position = UDim2.new(0, -PAD - 1, 1, PAD + 3)
+	ammoBack.Size = UDim2.new(1, PAD * 2 + 2, 0, 4)
+	local ammoFill = frame("Fill", ammoBack, 5)
+	ammoFill.BackgroundColor3 = WHITE
+	ammoFill.BackgroundTransparency = 0
+	ammoFill.Position = UDim2.fromOffset(1, 1)
+	local ammoGradient = gradient(ammoFill)
+
+	local JOINTS = {
+		Head = Vector2.new(0.49, 0.19), Neck = Vector2.new(0.50, 0.33),
+		LeftShoulder = Vector2.new(0.29, 0.40), RightShoulder = Vector2.new(0.75, 0.39),
+		LeftElbow = Vector2.new(0.32, 0.61), LeftHand = Vector2.new(0.43, 0.36),
+		RightElbow = Vector2.new(0.76, 0.63), RightHand = Vector2.new(0.63, 0.89),
+		Pelvis = Vector2.new(0.50, 0.72), LeftHip = Vector2.new(0.37, 0.73), RightHip = Vector2.new(0.65, 0.73),
+		LeftKnee = Vector2.new(0.39, 0.99), RightKnee = Vector2.new(0.61, 0.99),
+	}
+	local BONES = {
+		{ "Head", "Neck" }, { "Neck", "Pelvis" },
+		{ "Neck", "LeftShoulder" }, { "LeftShoulder", "LeftElbow" }, { "LeftElbow", "LeftHand" },
+		{ "Neck", "RightShoulder" }, { "RightShoulder", "RightElbow" }, { "RightElbow", "RightHand" },
+		{ "Pelvis", "LeftHip" }, { "LeftHip", "LeftKnee" }, { "Pelvis", "RightHip" }, { "RightHip", "RightKnee" },
+	}
+	local skeleton = frame("Skeleton", body, 6)
+	skeleton.Size = UDim2.fromScale(1, 1)
+	local boneFrames = {}
+	for _, bone in ipairs(BONES) do
+		local line = frame("Bone", skeleton, 6)
+		line.AnchorPoint = Vector2.new(0.5, 0.5)
+		line.BackgroundTransparency = 0
+		local outline = Instance.new("UIStroke")
+		outline.Thickness = 1
+		outline.Color = Color3.new(0, 0, 0)
+		outline.Transparency = 0.45
+		outline.Parent = line
+		table.insert(boneFrames, { Line = line, From = JOINTS[bone[1]], To = JOINTS[bone[2]] })
+	end
+	local function layoutSkeleton()
+		local size = body.AbsoluteSize
+		for _, bone in ipairs(boneFrames) do
+			local a = bone.From * size
+			local b = bone.To * size
+			local delta = b - a
+			bone.Line.Position = UDim2.fromOffset((a.X + b.X) / 2, (a.Y + b.Y) / 2)
+			bone.Line.Size = UDim2.fromOffset(delta.Magnitude, 1.5)
+			bone.Line.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+		end
+	end
+	body:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutSkeleton)
+	layoutSkeleton()
+
+	local headDot = frame("HeadDot", body, 7)
+	headDot.AnchorPoint = Vector2.new(0.5, 0.5)
+	headDot.Position = UDim2.fromScale(JOINTS.Head.X, JOINTS.Head.Y)
+	headDot.Size = UDim2.fromOffset(7, 7)
+	headDot.BackgroundTransparency = 0
+	local headCorner = Instance.new("UICorner")
+	headCorner.CornerRadius = UDim.new(1, 0)
+	headCorner.Parent = headDot
+	local headStroke = Instance.new("UIStroke")
+	headStroke.Thickness = 1
+	headStroke.Color = Color3.new(0, 0, 0)
+	headStroke.Parent = headDot
+
+	local function text(name, content, position, anchor)
+		local label = Instance.new("TextLabel")
+		label.Name = name
+		label.BackgroundTransparency = 1
+		label.AnchorPoint = anchor
+		label.Position = position
+		label.Size = UDim2.fromOffset(160, 14)
+		label.Text = content
+		label.TextSize = 12
+		label.TextStrokeTransparency = 0.35
+		label.TextColor3 = WHITE
+		label.ZIndex = 8
+		label.Parent = body
+		return label
+	end
+	local nameLabel = text("Name", "Paranoia", UDim2.new(0.5, 0, 0, -PAD - 3), Vector2.new(0.5, 1))
+	local rankLabel = text("Rank", "Diamond II", UDim2.new(0.5, 0, 0, -PAD - 17), Vector2.new(0.5, 1))
+	rankLabel.TextSize = 11
+	local weaponLabel = text("Weapon", "Assault Rifle", UDim2.new(0.5, 0, 1, PAD + 10), Vector2.new(0.5, 0))
+	weaponLabel.TextSize = 11
+
+	local textLabels = { nameLabel, rankLabel, weaponLabel }
+	applyPreviewFont = function()
+		local face = fontFace(EspState.Font, Enum.FontWeight.Bold)
+		for _, label in ipairs(textLabels) do
+			if face then label.FontFace = face end
+		end
+	end
+	applyPreviewFont()
+
+	local function sequence(colors)
+		return ColorSequence.new({
+			ColorSequenceKeypoint.new(0, colors[1]),
+			ColorSequenceKeypoint.new(0.5, colors[2]),
+			ColorSequenceKeypoint.new(1, colors[3]),
+		})
+	end
+
+	local clock = 0
+	local function paintGradient(g, element)
+		g.Color = sequence(element.Colors)
+		local rotation = element.Rotation
+		if element.Animate then rotation += clock * element.Speed * 360 end
+		g.Rotation = rotation % 360
+	end
+
+	local E = EspState.Elements
+	RunService.RenderStepped:Connect(function(dt)
+		if not (Window.Visible and stage.AbsoluteSize.X > 0 and stage.Parent and item.Frame.Visible) then return end
+		clock += dt
+
+		boxFill.Visible = E.BoxFill.Enabled
+		if E.BoxFill.Enabled then paintGradient(fillGradient, E.BoxFill) end
+
+		box.Visible = E.Box.Enabled
+		if E.Box.Enabled then paintGradient(boxGradient, E.Box) end
+
+		healthBack.Visible = E.HealthBar.Enabled
+		if E.HealthBar.Enabled then
+			local health = 0.62 + 0.33 * math.sin(clock * 0.7)
+			healthFill.Size = UDim2.new(1, -2, health, -2)
+			paintGradient(healthGradient, E.HealthBar)
+		end
+
+		ammoBack.Visible = E.AmmoBar.Enabled
+		if E.AmmoBar.Enabled then
+			local ammo = 1 - (math.floor(clock * 5) % 34) / 30
+			ammo = math.clamp(ammo, 0, 1)
+			ammoFill.Size = UDim2.new(ammo, -2, 1, -2)
+			paintGradient(ammoGradient, E.AmmoBar)
+		end
+
+		skeleton.Visible = E.Skeleton.Enabled
+		if E.Skeleton.Enabled then
+			for _, bone in ipairs(boneFrames) do bone.Line.BackgroundColor3 = E.Skeleton.Color end
+		end
+
+		headDot.Visible = E.HeadDot.Enabled
+		headDot.BackgroundColor3 = E.HeadDot.Color
+
+		nameLabel.Visible = E.Name.Enabled
+		nameLabel.TextColor3 = E.Name.Color
+		rankLabel.Visible = E.Rank.Enabled
+		rankLabel.TextColor3 = E.Rank.Color
+		weaponLabel.Visible = E.Weapon.Enabled
+		weaponLabel.TextColor3 = E.Weapon.Color
+		weaponLabel.Position = E.AmmoBar.Enabled and UDim2.new(0.5, 0, 1, PAD + 10) or UDim2.new(0.5, 0, 1, PAD + 2)
+		local topOffset = E.Name.Enabled and -PAD - 17 or -PAD - 3
+		rankLabel.Position = UDim2.new(0.5, 0, 0, topOffset)
+	end)
+end
+
+MiscCharacter:Section({ Name = "Character", Icon = Icon("character", "smile"), Side = 1 }):Label({ Name = "Nothing here yet" })
+MiscWeapons:Section({ Name = "Weapon Mods", Icon = Icon("weaponmods", "wrench"), Side = 1 }):Label({ Name = "Nothing here yet" })
+MiscAutomation:Section({ Name = "Automation", Icon = Icon("automation", "robot"), Side = 1 }):Label({ Name = "Nothing here yet" })
 
 local World = EffectsLocal:Section({ Name = "Local", Icon = Icon("local", "smile"), Side = 1 })
 World:Toggle({ Name = "Remove Flash", Default = false })
@@ -662,47 +1123,31 @@ Window:BuildSettings(Settings)
 finishNav()
 
 do
-	local EXTRA_FONTS = {
-		{ "Fortnite Style", "Oswald" },
-		{ "Phantom Forces Style", "TitilliumWeb" },
-		{ "Call of Duty Style", "Sarpanch" },
-		{ "Borderlands Style", "Bangers" },
-		{ "Marshmello Style", "FredokaOne" },
-		{ "Minecraft Style", "Arcade" },
-		{ "Halo Style", "Michroma" },
-		{ "Valorant Style", "RobotoCondensed" },
-		{ "Cartoon", "LuckiestGuy" },
-		{ "Graffiti", "PermanentMarker" },
-		{ "Horror", "Creepster" },
-		{ "Typewriter", "SpecialElite" },
-		{ "Handwritten", "PatrickHand" },
-		{ "Gothic", "GrenzeGotisch" },
-	}
-	local fonts = Blossom.Fonts
-	local added = {}
-	if fonts then
-		for _, entry in ipairs(EXTRA_FONTS) do
-			local ok, family = pcall(function()
-				return Font.fromEnum(Enum.Font[entry[2]]).Family
-			end)
-			if ok and family then
-				fonts[entry[1]] = family
-				table.insert(added, entry[1])
-			end
+	local menuFont, themeFont
+	for _, object in pairs(Window.FlagOwners or {}) do
+		if type(object) == "table" and type(object.Options) == "table" and type(object.SetOptions) == "function"
+			and table.find(object.Options, "Inter") and table.find(object.Options, "Arimo") and object.Item
+			and object.Item.Section and object.Item.Section.Tab == Settings then
+			menuFont = object
+			object:SetOptions(table.clone(FontList))
 		end
 	end
-	if #added > 0 then
-		for _, object in pairs(Window.FlagOwners or {}) do
-			if type(object) == "table" and type(object.Options) == "table" and type(object.SetOptions) == "function" then
-				local isFontList = table.find(object.Options, "Inter") and table.find(object.Options, "Arimo")
-				if isFontList then
-					local options = table.clone(object.Options)
-					for _, name in ipairs(added) do
-						if not table.find(options, name) then table.insert(options, name) end
-					end
-					object:SetOptions(options)
-				end
-			end
+	local theming
+	for _, section in pairs(Window.Sections or {}) do
+		if section.Name == "Theming" and section.Tab == Settings then theming = section end
+	end
+	if theming then
+		theming:Divider()
+		themeFont = theming:Dropdown({ Name = "Menu Font", Options = FontList, Default = "Inter", MaxRows = 12, Callback = function(value)
+			Window:SetFont(value)
+			if menuFont and menuFont.Value ~= value then pcall(function() menuFont:Set(value, true) end) end
+		end })
+	end
+	if menuFont and themeFont then
+		local original = menuFont.Callback
+		menuFont.Callback = function(value, ...)
+			if themeFont.Value ~= value then pcall(function() themeFont:Set(value, true) end) end
+			if original then return original(value, ...) end
 		end
 	end
 end
