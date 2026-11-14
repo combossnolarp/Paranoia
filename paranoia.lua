@@ -1519,7 +1519,8 @@ do
 end
 
 local Fire = { Last = 0, Held = false }
-local AimState = { Enabled = false, Fov = 120, DrawFov = true, FovColor = Color3.fromRGB(230, 160, 255), Smoothing = 35, AimPoint = "Head", TeamCheck = true, WallCheck = true, MaxDistance = 1000 }
+local HitSignals = {}
+local AimState = { Enabled = false, Fov = 120, DrawFov = true, FovColor = Color3.fromRGB(230, 160, 255), Smoothing = 35, AimPoint = "Head", TeamCheck = true, WallCheck = true, MaxDistance = 1000, SmoothX = 100, SmoothY = 100, SmoothJump = 100, Fill = false, FillColor = Color3.fromRGB(230, 160, 255), FillTransparency = 0.85, Rotation = 0, Moving = false, RotationSpeed = 1, Outline = true, DelayPosition = false, Lerp = 1 }
 do
 	local RunService = game:GetService("RunService")
 	local Players = game:GetService("Players")
@@ -1546,6 +1547,10 @@ do
 	local circleStroke = Instance.new("UIStroke")
 	circleStroke.Thickness = 1
 	circleStroke.Parent = circle
+	local circleGradient = Instance.new("UIGradient")
+	circleGradient.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(0.5, 1), NumberSequenceKeypoint.new(1, 1) })
+	circleGradient.Parent = circleStroke
+	local delayedPoint = nil
 
 	local section = LegitAim:Section({ Name = "Aim Assist", Icon = Icon("aimassist", "target"), Side = 1 })
 	section:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.UserInputType.MouseButton2, KeybindMode = "Hold", Callback = function(value) AimState.Enabled = value end })
@@ -1557,6 +1562,18 @@ do
 	local fovSection = LegitAim:Section({ Name = "FOV", Icon = Icon("targeting", "bullet"), Side = 2 })
 	fovSection:Slider({ Name = "FOV Size", Min = 10, Max = 800, Default = AimState.Fov, Suffix = "px", Callback = function(value) AimState.Fov = value end })
 	fovSection:Toggle({ Name = "Draw FOV", Default = true, Color = AimState.FovColor, ColorCallback = function(color) AimState.FovColor = color end, Callback = function(value) AimState.DrawFov = value end })
+	fovSection:Toggle({ Name = "FOV Outline", Default = true, Callback = function(value) AimState.Outline = value end })
+	fovSection:Toggle({ Name = "FOV Fill", Default = false, Color = AimState.FillColor, ColorCallback = function(color) AimState.FillColor = color end, Callback = function(value) AimState.Fill = value end })
+	fovSection:Slider({ Name = "Fill Transparency", Min = 0, Max = 100, Default = 85, Suffix = "%", Callback = function(value) AimState.FillTransparency = value / 100 end })
+	fovSection:Slider({ Name = "FOV Lerp", Min = 0.01, Max = 1, Default = 1, Decimals = 2, Suffix = "x", Callback = function(value) AimState.Lerp = value end })
+	fovSection:Toggle({ Name = "Moving Rotation", Default = false, Callback = function(value) AimState.Moving = value end })
+	fovSection:Slider({ Name = "FOV Rotation", Min = 0, Max = 360, Default = 0, Suffix = "deg", Callback = function(value) AimState.Rotation = value end })
+	fovSection:Slider({ Name = "Rotation Speed", Min = 0.1, Max = 10, Default = 1, Decimals = 1, Suffix = "rps", Callback = function(value) AimState.RotationSpeed = value end })
+	local smoothSection = LegitAim:Section({ Name = "Smoothing", Icon = Icon("recoil", "target"), Side = 1 })
+	smoothSection:Slider({ Name = "X Smooth", Min = 1, Max = 100, Default = 100, Suffix = "%", Callback = function(value) AimState.SmoothX = value end })
+	smoothSection:Slider({ Name = "Y Smooth", Min = 1, Max = 100, Default = 100, Suffix = "%", Callback = function(value) AimState.SmoothY = value end })
+	smoothSection:Slider({ Name = "Jump Smoothing", Min = 1, Max = 100, Default = 100, Suffix = "%", Callback = function(value) AimState.SmoothJump = value end })
+	smoothSection:Toggle({ Name = "Delay Position", Default = false, Callback = function(value) AimState.DelayPosition = value end })
 
 	local function hitPart(character)
 		local mode = AimState.AimPoint
@@ -1612,15 +1629,31 @@ do
 		local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
 		circle.Visible = AimState.DrawFov and AimState.Enabled
 		circle.Position = UDim2.fromOffset(center.X, center.Y)
-		circle.Size = UDim2.fromOffset(AimState.Fov * 2, AimState.Fov * 2)
+		local radius = AimState.Fov * AimState.Lerp
+		circle.Size = UDim2.fromOffset(radius * 2, radius * 2)
 		circleStroke.Color = AimState.FovColor
+		circleStroke.Enabled = AimState.Outline
+		circle.BackgroundColor3 = AimState.FillColor
+		circle.BackgroundTransparency = AimState.Fill and AimState.FillTransparency or 1
+		circleGradient.Rotation = AimState.Moving and (os.clock() * AimState.RotationSpeed * 360) % 360 or AimState.Rotation
+		circleGradient.Enabled = AimState.Moving or AimState.Rotation ~= 0
 		if not AimState.Enabled then return end
 		local _, part = pickTarget(camera, center)
 		if not part then return end
 		local alpha = 1 - AimState.Smoothing / 100
 		if mousemoverel then
 			local point = camera:WorldToViewportPoint(part.Position)
-			mousemoverel((point.X - center.X) * alpha, (point.Y - center.Y) * alpha)
+			local goal = Vector2.new(point.X, point.Y)
+			if AimState.DelayPosition then
+				delayedPoint = delayedPoint and delayedPoint:Lerp(goal, 0.25) or goal
+				goal = delayedPoint
+			else
+				delayedPoint = nil
+			end
+			local jump = 1
+			local root = part.Parent and part.Parent:FindFirstChild("HumanoidRootPart")
+			if root and math.abs(root.AssemblyLinearVelocity.Y) > 4 then jump = AimState.SmoothJump / 100 end
+			mousemoverel((goal.X - center.X) * alpha * (AimState.SmoothX / 100) * jump, (goal.Y - center.Y) * alpha * (AimState.SmoothY / 100) * jump)
 		else
 			local goal = CFrame.new(camera.CFrame.Position, part.Position)
 			camera.CFrame = camera.CFrame:Lerp(goal, alpha)
@@ -1800,18 +1833,24 @@ do
 	end)
 end
 
-local TriggerState = { Enabled = false, Delay = 60, TeamCheck = true }
+local TriggerState = { Enabled = false, Delay = 60, TeamCheck = true, Offset = 0, Forget = 0.5, ShootDelay = 0, MaxDistance = 500, Blacklist = {}, VisibleOnly = false }
 do
 	local RunService = game:GetService("RunService")
 	local Players = game:GetService("Players")
 	local localPlayer = Players.LocalPlayer
 	local mouse = localPlayer:GetMouse()
-	local lastClick, seenAt = 0, nil
+	local lastClick, seenAt, lostAt, jitter = 0, nil, nil, 0
 
 	local section = LegitTrigger:Section({ Name = "Triggerbot", Icon = Icon("trigger", "bullet"), Side = 1 })
 	section:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.T, Callback = function(value) TriggerState.Enabled = value end })
 	section:Slider({ Name = "Delay", Min = 0, Max = 500, Default = TriggerState.Delay, Suffix = " ms", Callback = function(value) TriggerState.Delay = value end })
 	section:Toggle({ Name = "Team Check", Default = true, Callback = function(value) TriggerState.TeamCheck = value end })
+	section:Slider({ Name = "Reaction Offset", Min = 0, Max = 100, Default = 0, Suffix = " ms", Callback = function(value) TriggerState.Offset = value end })
+	section:Slider({ Name = "Forget Time", Min = 0, Max = 10, Default = 0.5, Decimals = 1, Suffix = "s", Callback = function(value) TriggerState.Forget = value end })
+	section:Slider({ Name = "Shoot Delay", Min = 0, Max = 300, Default = 0, Suffix = " ms", Callback = function(value) TriggerState.ShootDelay = value end })
+	section:Slider({ Name = "Max Distance", Min = 25, Max = 500, Default = 500, Suffix = " studs", Callback = function(value) TriggerState.MaxDistance = value end })
+	section:Toggle({ Name = "Visible Only", Default = false, Callback = function(value) TriggerState.VisibleOnly = value end })
+	section:Dropdown({ Name = "Part Blacklist", Options = { "Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot" }, Default = {}, Multi = true, MaxRows = 12, Callback = function(value) TriggerState.Blacklist = value end })
 
 	local function playerUnder(part)
 		local model = part and part:FindFirstAncestorWhichIsA("Model")
@@ -1825,11 +1864,30 @@ do
 		if not TriggerState.Enabled then seenAt = nil return end
 		local player, model = playerUnder(mouse.Target)
 		local humanoid = model and model:FindFirstChildOfClass("Humanoid")
-		if not player or player == localPlayer or not humanoid or humanoid.Health <= 0 then seenAt = nil return end
+		if not player or player == localPlayer or not humanoid or humanoid.Health <= 0 then
+			if seenAt and os.clock() - (lostAt or 0) > TriggerState.Forget then seenAt = nil end
+			lostAt = lostAt or os.clock()
+			return
+		end
+		lostAt = nil
 		if TriggerState.TeamCheck and player.Team ~= nil and player.Team == localPlayer.Team then seenAt = nil return end
+		local target = mouse.Target
+		local blacklist = TriggerState.Blacklist
+		if type(blacklist) == "table" and (blacklist[target.Name] == true or table.find(blacklist, target.Name)) then return end
+		local camera = workspace.CurrentCamera
+		if camera and (target.Position - camera.CFrame.Position).Magnitude > TriggerState.MaxDistance then return end
+		if TriggerState.VisibleOnly and camera then
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			params.FilterDescendantsInstances = { localPlayer.Character, model }
+			if workspace:Raycast(camera.CFrame.Position, target.Position - camera.CFrame.Position, params) then return end
+		end
 		local now = os.clock()
-		seenAt = seenAt or now
-		if now - seenAt >= TriggerState.Delay / 1000 and now - lastClick > 0.08 and mouse1click then
+		if not seenAt then
+			seenAt = now
+			jitter = math.random() * TriggerState.Offset
+		end
+		if now - seenAt >= (TriggerState.Delay + jitter) / 1000 and now - lastClick > math.max(0.08, TriggerState.ShootDelay / 1000) and mouse1click then
 			lastClick = now
 			Fire.Last = now
 			pcall(mouse1click)
@@ -2098,6 +2156,7 @@ do
 
 	local function registerHit(player, character, damage, killed)
 		local root = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+		for _, handler in ipairs(HitSignals) do pcall(handler, player, character, damage, killed) end
 		if H.Notify.Enabled then
 			toast(killed and ("Killed " .. player.DisplayName) or string.format("Hit %s  -%d", player.DisplayName, math.floor(damage + 0.5)))
 		end
@@ -2278,11 +2337,1055 @@ end
 
 EspWorld:Section({ Name = "World", Icon = Icon("world", "globe"), Side = 1 }):Label({ Name = "Nothing here yet" })
 EspCosmetics:Section({ Name = "Cosmetics", Icon = Icon("preview", "smile"), Side = 1 }):Label({ Name = "Nothing here yet" })
-RageAntiAim:Section({ Name = "Anti Aim", Icon = Icon("antiaim", "wrench"), Side = 1 }):Label({ Name = "Nothing here yet" })
-LegitSilent:Section({ Name = "Silent Aim", Icon = Icon("silent", "bullet"), Side = 1 }):Label({ Name = "Nothing here yet" })
-MiscCharacter:Section({ Name = "Character", Icon = Icon("character", "smile"), Side = 1 }):Label({ Name = "Nothing here yet" })
-MiscWeapons:Section({ Name = "Weapon Mods", Icon = Icon("weaponmods", "wrench"), Side = 1 }):Label({ Name = "Nothing here yet" })
-MiscAutomation:Section({ Name = "Automation", Icon = Icon("automation", "robot"), Side = 1 }):Label({ Name = "Nothing here yet" })
+
+local PX = {}
+do
+	local Players = game:GetService("Players")
+	local localPlayer = Players.LocalPlayer
+	PX.Players, PX.Local = Players, localPlayer
+
+	function PX.root(character)
+		return character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head"))
+	end
+
+	function PX.alive(character)
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		return humanoid and humanoid.Health > 0 and humanoid or nil
+	end
+
+	function PX.isEnemy(player, teamCheck)
+		if player == localPlayer then return false end
+		if teamCheck and player.Team ~= nil and player.Team == localPlayer.Team then return false end
+		return PX.alive(player.Character) ~= nil
+	end
+
+	function PX.visible(camera, part, character)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { localPlayer.Character, character, camera }
+		local origin = camera.CFrame.Position
+		return workspace:Raycast(origin, part.Position - origin, params) == nil
+	end
+
+	function PX.gui(name, order)
+		local playerGui = localPlayer:WaitForChild("PlayerGui")
+		local old = playerGui:FindFirstChild(name)
+		if old then old:Destroy() end
+		local gui = Instance.new("ScreenGui")
+		gui.Name = name
+		gui.ResetOnSpawn = false
+		gui.IgnoreGuiInset = true
+		gui.DisplayOrder = order or 45
+		gui.Parent = playerGui
+		return gui
+	end
+
+	function PX.closestPart(character, camera, center, names)
+		local best, bestDistance
+		for _, name in ipairs(names) do
+			local part = character:FindFirstChild(name)
+			if part then
+				local point, onScreen = camera:WorldToViewportPoint(part.Position)
+				if onScreen then
+					local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
+					if not bestDistance or distance < bestDistance then best, bestDistance = part, distance end
+				end
+			end
+		end
+		return best, bestDistance
+	end
+
+	function PX.equipped()
+		local character = localPlayer.Character
+		return character and character:FindFirstChildOfClass("Tool")
+	end
+
+	function PX.tools()
+		local list = {}
+		local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+		if backpack then for _, tool in ipairs(backpack:GetChildren()) do if tool:IsA("Tool") then table.insert(list, tool) end end end
+		local held = PX.equipped()
+		if held then table.insert(list, 1, held) end
+		return list
+	end
+
+	PX.BodyParts = { "Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot" }
+	PX.Materials = { "ForceField", "Neon", "Plastic", "SmoothPlastic", "Marble", "Slate", "Concrete", "Granite", "Brick", "Pebble", "Cobblestone", "Rock", "Sandstone", "Basalt", "CrackedLava", "Limestone", "Pavement", "Glass", "Metal", "DiamondPlate", "Foil", "Ice", "Fabric", "WoodPlanks", "Wood" }
+end
+
+local SilentState = { Enabled = false, Radius = 100, HitChance = 100, Closest = false, Manipulation = false, ShowFov = false, Color = Color3.fromRGB(230, 160, 255), Fill = false, Outline = true, Part = nil, Roll = true, Moving = false, Rotation = 0, RotationSpeed = 1, Lerp = 1, FillColor = Color3.fromRGB(230, 160, 255), TeamCheck = true }
+do
+	local RunService = game:GetService("RunService")
+	local localPlayer = PX.Local
+	local mouse = localPlayer:GetMouse()
+	local gui = PX.gui("ParanoiaSilent", 41)
+
+	local circle = Instance.new("Frame")
+	circle.AnchorPoint = Vector2.new(0.5, 0.5)
+	circle.BackgroundTransparency = 1
+	circle.Visible = false
+	circle.Parent = gui
+	Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+	local stroke = Instance.new("UIStroke", circle)
+	stroke.Thickness = 1
+	local gradient = Instance.new("UIGradient", stroke)
+	gradient.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(0.5, 1), NumberSequenceKeypoint.new(1, 1) })
+
+	local section = LegitSilent:Section({ Name = "Silent Aim", Icon = Icon("silent", "bullet"), Side = 1 })
+	section:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.V, Callback = function(value) SilentState.Enabled = value end })
+	section:Toggle({ Name = "Manipulation", Default = false, Callback = function(value) SilentState.Manipulation = value end })
+	section:Toggle({ Name = "Closest Part", Default = false, Callback = function(value) SilentState.Closest = value end })
+	section:Toggle({ Name = "Team Check", Default = true, Callback = function(value) SilentState.TeamCheck = value end })
+	section:Slider({ Name = "Radius", Min = 0, Max = 1000, Default = 100, Suffix = "px", Callback = function(value) SilentState.Radius = value end })
+	section:Slider({ Name = "Hit Chance", Min = 1, Max = 100, Default = 100, Suffix = "%", Callback = function(value) SilentState.HitChance = value end })
+	local fov = LegitSilent:Section({ Name = "Silent FOV", Icon = Icon("targeting", "bullet"), Side = 2 })
+	fov:Toggle({ Name = "Show FOV", Default = false, Color = SilentState.Color, ColorCallback = function(color) SilentState.Color = color end, Callback = function(value) SilentState.ShowFov = value end })
+	fov:Toggle({ Name = "Outline", Default = true, Callback = function(value) SilentState.Outline = value end })
+	fov:Toggle({ Name = "Fill", Default = false, Color = SilentState.FillColor, ColorCallback = function(color) SilentState.FillColor = color end, Callback = function(value) SilentState.Fill = value end })
+	fov:Slider({ Name = "Lerp", Min = 0.01, Max = 1, Default = 1, Decimals = 2, Suffix = "x", Callback = function(value) SilentState.Lerp = value end })
+	fov:Toggle({ Name = "Moving Rotation", Default = false, Callback = function(value) SilentState.Moving = value end })
+	fov:Slider({ Name = "Rotation", Min = 0, Max = 360, Default = 0, Suffix = "deg", Callback = function(value) SilentState.Rotation = value end })
+	fov:Slider({ Name = "Rotation Speed", Min = 0.1, Max = 10, Default = 1, Decimals = 1, Suffix = "rps", Callback = function(value) SilentState.RotationSpeed = value end })
+
+	local function pick(camera, center)
+		local bestPart, bestDistance = nil, SilentState.Radius
+		for _, player in ipairs(PX.Players:GetPlayers()) do
+			if PX.isEnemy(player, SilentState.TeamCheck) then
+				local character = player.Character
+				local part, distance
+				if SilentState.Closest then
+					part, distance = PX.closestPart(character, camera, center, { "Head", "UpperTorso", "LowerTorso", "HumanoidRootPart", "LeftHand", "RightHand", "LeftFoot", "RightFoot" })
+				else
+					part = character:FindFirstChild("Head")
+					if part then
+						local point, onScreen = camera:WorldToViewportPoint(part.Position)
+						distance = onScreen and (Vector2.new(point.X, point.Y) - center).Magnitude or nil
+					end
+				end
+				if part and distance and distance <= bestDistance then bestPart, bestDistance = part, distance end
+			end
+		end
+		return bestPart
+	end
+
+	RunService.RenderStepped:Connect(function()
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+		local viewport = camera.ViewportSize
+		local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
+		local radius = SilentState.Radius * SilentState.Lerp
+		circle.Visible = SilentState.ShowFov and SilentState.Enabled
+		circle.Position = UDim2.fromOffset(center.X, center.Y)
+		circle.Size = UDim2.fromOffset(radius * 2, radius * 2)
+		stroke.Color = SilentState.Color
+		stroke.Enabled = SilentState.Outline
+		circle.BackgroundColor3 = SilentState.FillColor
+		circle.BackgroundTransparency = SilentState.Fill and 0.85 or 1
+		gradient.Rotation = SilentState.Moving and (os.clock() * SilentState.RotationSpeed * 360) % 360 or SilentState.Rotation
+		gradient.Enabled = SilentState.Moving or SilentState.Rotation ~= 0
+		SilentState.Part = SilentState.Enabled and pick(camera, center) or nil
+		SilentState.Roll = math.random(1, 100) <= SilentState.HitChance
+	end)
+
+	local function redirect(origin, direction)
+		local part = SilentState.Part
+		if not part or not SilentState.Roll then return nil end
+		if SilentState.Manipulation then
+			local toTarget = part.Position - origin
+			if toTarget.Magnitude > 12 then origin = origin + toTarget.Unit * math.min(toTarget.Magnitude - 4, 12) end
+		end
+		local length = math.max(direction.Magnitude, 1000)
+		return origin, (part.Position - origin).Unit * length
+	end
+
+	if hookmetamethod and getnamecallmethod and newcclosure then
+		local oldNamecall
+		oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+			if SilentState.Part and not (checkcaller and checkcaller()) then
+				local method = getnamecallmethod()
+				if self == workspace and method == "Raycast" then
+					local args = table.pack(...)
+					if typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
+						local origin, direction = redirect(args[1], args[2])
+						if origin then
+							args[1], args[2] = origin, direction
+							return oldNamecall(self, table.unpack(args, 1, args.n))
+						end
+					end
+				elseif self == workspace and (method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist") then
+					local args = table.pack(...)
+					if typeof(args[1]) == "Ray" then
+						local origin, direction = redirect(args[1].Origin, args[1].Direction)
+						if origin then
+							args[1] = Ray.new(origin, direction)
+							return oldNamecall(self, table.unpack(args, 1, args.n))
+						end
+					end
+				elseif self == workspace.CurrentCamera and (method == "ViewportPointToRay" or method == "ScreenPointToRay") then
+					local ray = oldNamecall(self, ...)
+					local origin, direction = redirect(ray.Origin, ray.Direction)
+					if origin then return Ray.new(origin, direction.Unit) end
+					return ray
+				end
+			end
+			return oldNamecall(self, ...)
+		end))
+		local oldIndex
+		oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+			if self == mouse and SilentState.Part and SilentState.Roll and not (checkcaller and checkcaller()) then
+				if key == "Hit" then return SilentState.Part.CFrame end
+				if key == "Target" then return SilentState.Part end
+			end
+			return oldIndex(self, key)
+		end))
+	else
+		section:Label({ Name = "Executor lacks hookmetamethod" })
+	end
+end
+
+local VoidState = { Enabled = false, Hide = 0.25, Attack = 0.1, Attempts = 1, Mode = "gun", Weapon = "primary", SwapEmpty = false, Priority = false, Notify = true, Attackers = {}, Manual = {} }
+do
+	local RunService = game:GetService("RunService")
+	local localPlayer = PX.Local
+
+	local section = RageMain:Section({ Name = "Void Spam", Icon = Icon("ragebot", "robot"), Side = 1 })
+	section:Toggle({ Name = "Void Spam", Default = false, Callback = function(value) VoidState.Enabled = value end })
+	section:Slider({ Name = "Hide Time", Min = 0.01, Max = 1, Default = 0.25, Decimals = 2, Suffix = "s", Callback = function(value) VoidState.Hide = value end })
+	section:Slider({ Name = "Attack Time", Min = 0.01, Max = 1, Default = 0.1, Decimals = 2, Suffix = "s", Callback = function(value) VoidState.Attack = value end })
+	section:Slider({ Name = "Shoot Attempts", Min = 1, Max = 2, Default = 1, Suffix = "x", Callback = function(value) VoidState.Attempts = value end })
+	section:Dropdown({ Name = "Attack Mode", Options = { "gun", "knife", "melee" }, Default = "gun", Callback = function(value) VoidState.Mode = value end })
+	section:Dropdown({ Name = "Preferred Weapon", Options = { "primary", "secondary" }, Default = "primary", Callback = function(value) VoidState.Weapon = value end })
+	section:Toggle({ Name = "Swap Weapons When Empty", Default = false, Callback = function(value) VoidState.SwapEmpty = value end })
+	local priority = RageMain:Section({ Name = "Priority", Icon = Icon("targeting", "target"), Side = 2 })
+	priority:Toggle({ Name = "Auto Prioritize", Default = false, Callback = function(value) VoidState.Priority = value end })
+	priority:Toggle({ Name = "Send Notification", Default = true, Callback = function(value) VoidState.Notify = value end })
+	priority:Button({ Name = "Clear Priority", Callback = function() VoidState.Attackers = {} end })
+
+	local function track(player)
+		if player == localPlayer then return end
+		player.CharacterAdded:Connect(function() end)
+	end
+	for _, player in ipairs(PX.Players:GetPlayers()) do track(player) end
+	PX.Players.PlayerAdded:Connect(track)
+
+	local lastHealth
+	local function watch(character)
+		local humanoid = character:WaitForChild("Humanoid", 5)
+		if not humanoid then return end
+		lastHealth = humanoid.Health
+		humanoid.HealthChanged:Connect(function(health)
+			if VoidState.Priority and lastHealth and health < lastHealth then
+				local myRoot = PX.root(character)
+				local nearest, nearestAngle
+				for _, player in ipairs(PX.Players:GetPlayers()) do
+					local root = player ~= localPlayer and PX.alive(player.Character) and PX.root(player.Character)
+					if root and myRoot then
+						local toMe = (myRoot.Position - root.Position).Unit
+						local angle = math.acos(math.clamp(root.CFrame.LookVector:Dot(toMe), -1, 1))
+						if angle < math.rad(25) and (not nearestAngle or angle < nearestAngle) then nearest, nearestAngle = player, angle end
+					end
+				end
+				if nearest and not VoidState.Attackers[nearest] then
+					VoidState.Attackers[nearest] = true
+					if VoidState.Notify then pcall(function() Window:Notify("Prioritizing " .. nearest.DisplayName) end) end
+				end
+			end
+			lastHealth = health
+		end)
+	end
+	if localPlayer.Character then task.spawn(watch, localPlayer.Character) end
+	localPlayer.CharacterAdded:Connect(watch)
+
+	local function equip(slot)
+		local character = localPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not humanoid then return end
+		local tools = PX.tools()
+		local chosen
+		for index, tool in ipairs(tools) do
+			local name = string.lower(tool.Name)
+			if slot == "knife" and (string.find(name, "knife") or string.find(name, "dagger")) then chosen = tool break end
+			if slot == "melee" and (string.find(name, "katana") or string.find(name, "sword") or string.find(name, "bat") or string.find(name, "melee") or string.find(name, "fists")) then chosen = tool break end
+		end
+		if not chosen and (slot == "primary" or slot == "gun") then chosen = tools[1] end
+		if not chosen and slot == "secondary" then chosen = tools[2] or tools[1] end
+		if not chosen and slot == "gun" then chosen = tools[1] end
+		if chosen and chosen.Parent ~= character then pcall(function() humanoid:EquipTool(chosen) end) end
+	end
+
+	local function pickTarget()
+		local best, bestScore
+		local myRoot = PX.root(localPlayer.Character)
+		if not myRoot then return nil end
+		for _, player in ipairs(PX.Players:GetPlayers()) do
+			if PX.isEnemy(player, RageState.TeamCheck) then
+				local root = PX.root(player.Character)
+				local score = (root.Position - myRoot.Position).Magnitude
+				if VoidState.Attackers[player] then score -= 1e6 end
+				if not bestScore or score < bestScore then best, bestScore = player, score end
+			end
+		end
+		return best
+	end
+
+	local phase, phaseStart, home = "hide", os.clock(), nil
+	RunService.Heartbeat:Connect(function()
+		local character = localPlayer.Character
+		local myRoot = character and character:FindFirstChild("HumanoidRootPart")
+		if not (VoidState.Enabled and RageState.Enabled and myRoot) then
+			if home and myRoot then myRoot.CFrame = home end
+			home = nil
+			phase = "hide"
+			return
+		end
+		local now = os.clock()
+		local target = pickTarget()
+		if phase == "hide" then
+			if not home then home = myRoot.CFrame end
+			myRoot.CFrame = CFrame.new(home.X, -480, home.Z)
+			myRoot.AssemblyLinearVelocity = Vector3.zero
+			if now - phaseStart >= VoidState.Hide and target then
+				phase, phaseStart = "attack", now
+			end
+		else
+			local targetRoot = target and PX.root(target.Character)
+			if not targetRoot then
+				phase, phaseStart = "hide", now
+				return
+			end
+			local back = targetRoot.CFrame * CFrame.new(0, 0, VoidState.Mode == "gun" and 6 or 2.5)
+			myRoot.CFrame = CFrame.lookAt(back.Position, targetRoot.Position)
+			myRoot.AssemblyLinearVelocity = Vector3.zero
+			equip(VoidState.Mode == "gun" and VoidState.Weapon or VoidState.Mode)
+			local camera = workspace.CurrentCamera
+			if camera then camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetRoot.Position) end
+			for _ = 1, VoidState.Attempts do
+				Fire.Last = now
+				local tool = PX.equipped()
+				if tool then pcall(function() tool:Activate() end) end
+				if mouse1click then pcall(mouse1click) end
+			end
+			if now - phaseStart >= VoidState.Attack then phase, phaseStart = "hide", now end
+		end
+	end)
+end
+
+local AntiAim = { Enabled = false, Pitch = "disabled", PitchAngle = 0, Yaw = "disabled", YawAngle = 0, Underground = false }
+do
+	local RunService = game:GetService("RunService")
+	local localPlayer = PX.Local
+	local section = RageAntiAim:Section({ Name = "Anti Aim", Icon = Icon("antiaim", "wrench"), Side = 1 })
+	section:Toggle({ Name = "Enabled", Default = false, Callback = function(value) AntiAim.Enabled = value end })
+	section:Dropdown({ Name = "Pitch", Options = { "disabled", "offset", "look up", "look down", "custom", "extended custom", "extended random" }, Default = "disabled", Callback = function(value) AntiAim.Pitch = value end })
+	section:Slider({ Name = "Pitch Angle", Min = -180, Max = 180, Default = 0, Suffix = "deg", Callback = function(value) AntiAim.PitchAngle = value end })
+	section:Dropdown({ Name = "Yaw", Options = { "disabled", "backwards", "random", "custom", "offset" }, Default = "disabled", Callback = function(value) AntiAim.Yaw = value end })
+	section:Slider({ Name = "Yaw Angle", Min = -180, Max = 180, Default = 0, Suffix = "deg", Callback = function(value) AntiAim.YawAngle = value end })
+	section:Toggle({ Name = "Underground", Default = false, Keybind = Enum.KeyCode.U, Callback = function(value) AntiAim.Underground = value end })
+
+	local defaults = setmetatable({}, { __mode = "k" })
+	local originalHip
+	RunService.Heartbeat:Connect(function()
+		local character = localPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not (humanoid and root) then return end
+		local neck = character:FindFirstChild("Neck", true)
+		if neck and neck:IsA("Motor6D") and not defaults[neck] then defaults[neck] = neck.C0 end
+		if AntiAim.Underground then
+			originalHip = originalHip or humanoid.HipHeight
+			humanoid.HipHeight = -math.max(humanoid.HipHeight + 3.2, 3.2)
+		elseif originalHip then
+			humanoid.HipHeight = originalHip
+			originalHip = nil
+		end
+		if not AntiAim.Enabled then
+			if neck and defaults[neck] then neck.C0 = defaults[neck] end
+			if humanoid.AutoRotate == false and AntiAim.Yaw == "disabled" then humanoid.AutoRotate = true end
+			return
+		end
+		if neck and defaults[neck] then
+			local pitch = 0
+			local mode = AntiAim.Pitch
+			if mode == "offset" then pitch = AntiAim.PitchAngle
+			elseif mode == "look up" then pitch = 85
+			elseif mode == "look down" then pitch = -85
+			elseif mode == "custom" then pitch = math.clamp(AntiAim.PitchAngle, -89, 89)
+			elseif mode == "extended custom" then pitch = AntiAim.PitchAngle
+			elseif mode == "extended random" then pitch = math.random(-180, 180) end
+			if mode == "disabled" then
+				neck.C0 = defaults[neck]
+			else
+				neck.C0 = defaults[neck] * CFrame.Angles(math.rad(pitch), 0, 0)
+			end
+		end
+		local yaw = AntiAim.Yaw
+		if yaw ~= "disabled" then
+			humanoid.AutoRotate = false
+			local camera = workspace.CurrentCamera
+			local _, cameraYaw = camera.CFrame:ToOrientation()
+			local angle
+			if yaw == "backwards" then angle = cameraYaw + math.pi
+			elseif yaw == "random" then angle = math.rad(math.random(-180, 180))
+			elseif yaw == "custom" then angle = math.rad(AntiAim.YawAngle)
+			else angle = cameraYaw + math.rad(AntiAim.YawAngle) end
+			root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, angle, 0)
+		end
+	end)
+end
+
+local WeaponMods = { NoSpread = false, FullAuto = false, Firerate = 100, Backstab = false, Grenade = {} }
+do
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local section = MiscWeapons:Section({ Name = "Weapon Mods", Icon = Icon("weaponmods", "wrench"), Side = 1 })
+	local originals = {}
+	local SPREAD = { "spread", "shotspread", "bulletspread", "inaccuracy", "recoil", "recoilx", "recoily", "shake" }
+	local RATE = { "shootcooldown", "firecooldown", "cooldown", "firedelay", "firerate", "rpm", "shotdelay" }
+
+	local function scan()
+		local ok, library = pcall(function() return require(ReplicatedStorage:FindFirstChild("Modules"):FindFirstChild("ItemLibrary")) end)
+		local roots = {}
+		if ok and type(library) == "table" then table.insert(roots, library) end
+		if getgc then
+			for _, value in ipairs(getgc(true)) do
+				if type(value) == "table" and rawget(value, "ShootCooldown") ~= nil then table.insert(roots, { value }) end
+			end
+		end
+		return roots
+	end
+
+	local function apply()
+		for _, root in ipairs(scan()) do
+			local seen = {}
+			local function walk(tbl, depth)
+				if depth > 5 or seen[tbl] then return end
+				seen[tbl] = true
+				for key, value in pairs(tbl) do
+					if type(key) == "string" then
+						local lower = string.lower(key)
+						local record = originals[tbl] or {}
+						if type(value) == "number" or type(value) == "boolean" then
+							if WeaponMods.NoSpread and table.find(SPREAD, lower) and type(value) == "number" then
+								record[key] = record[key] == nil and value or record[key]
+								originals[tbl] = record
+								tbl[key] = 0
+							elseif table.find(RATE, lower) and type(value) == "number" then
+								if record[key] == nil then record[key] = value originals[tbl] = record end
+								tbl[key] = record[key] * (100 / math.max(WeaponMods.Firerate, 10))
+							elseif WeaponMods.FullAuto and (lower == "auto" or lower == "automatic" or lower == "fullauto") then
+								if record[key] == nil then record[key] = value originals[tbl] = record end
+								tbl[key] = true
+							end
+						elseif type(value) == "table" then
+							walk(value, depth + 1)
+						end
+					end
+				end
+			end
+			pcall(walk, root, 0)
+		end
+	end
+
+	local function restore()
+		for tbl, record in pairs(originals) do
+			for key, value in pairs(record) do pcall(function() tbl[key] = value end) end
+		end
+		table.clear(originals)
+	end
+
+	local function refresh()
+		if WeaponMods.NoSpread or WeaponMods.FullAuto or WeaponMods.Firerate < 100 then
+			restore()
+			apply()
+		else
+			restore()
+		end
+	end
+
+	section:Toggle({ Name = "No Spread", Default = false, Callback = function(value) WeaponMods.NoSpread = value refresh() end })
+	section:Toggle({ Name = "Full Auto", Default = false, Callback = function(value) WeaponMods.FullAuto = value refresh() end })
+	section:Slider({ Name = "Firerate", Min = 10, Max = 100, Default = 100, Suffix = "%", Callback = function(value) WeaponMods.Firerate = value refresh() end })
+	section:Toggle({ Name = "Always Backstab", Default = false, Callback = function(value) WeaponMods.Backstab = value end })
+	section:Dropdown({ Name = "Grenade Options", Options = { "explode on throw", "remove fuse" }, Default = {}, Multi = true, Callback = function(value) WeaponMods.Grenade = value end })
+
+	local viewmodelSection = MiscWeapons:Section({ Name = "Viewmodel", Icon = Icon("weaponmods", "wrench"), Side = 2 })
+	local VM = { Disable = {}, Offset = false, X = 0, Y = 0, Z = 0, Override = false, Color = false, ColorValue = Color3.fromRGB(230, 160, 255), Material = false, MaterialValue = "ForceField", Wireframe = false, Transparency = 0, Chams = false, ChamColor = Color3.fromRGB(230, 160, 255), ChamFill = 0.5, ChamOutline = 0 }
+	VM.Disable = {}
+	viewmodelSection:Dropdown({ Name = "Disable", Options = { "sway", "bobbing", "muzzle flash", "idle animation", "jump animation", "shoot animation", "aiming animation", "sprint animation" }, Default = {}, Multi = true, MaxRows = 8, Callback = function(value) VM.Disable = value end })
+	viewmodelSection:Toggle({ Name = "Offset", Default = false, Callback = function(value) VM.Offset = value end })
+	viewmodelSection:Slider({ Name = "Offset X", Min = -3, Max = 3, Default = 0, Decimals = 1, Callback = function(value) VM.X = value end })
+	viewmodelSection:Slider({ Name = "Offset Y", Min = -3, Max = 3, Default = 0, Decimals = 1, Callback = function(value) VM.Y = value end })
+	viewmodelSection:Slider({ Name = "Offset Z", Min = -3, Max = 3, Default = 0, Decimals = 1, Callback = function(value) VM.Z = value end })
+	viewmodelSection:Button({ Name = "Reset Offset", Callback = function() VM.X, VM.Y, VM.Z = 0, 0, 0 end })
+	viewmodelSection:Toggle({ Name = "Override Appearance", Default = false, Color = VM.ColorValue, ColorCallback = function(color) VM.ColorValue = color end, Callback = function(value) VM.Override = value end })
+	viewmodelSection:Dropdown({ Name = "Viewmodel Material", Options = PX.Materials, Default = "ForceField", MaxRows = 10, Callback = function(value) VM.MaterialValue = value VM.Material = true end })
+	viewmodelSection:Toggle({ Name = "Wireframe", Default = false, Callback = function(value) VM.Wireframe = value end })
+	viewmodelSection:Slider({ Name = "Viewmodel Transparency", Min = 0, Max = 100, Default = 0, Suffix = "%", Callback = function(value) VM.Transparency = value / 100 end })
+	viewmodelSection:Toggle({ Name = "Viewmodel Chams", Default = false, Color = VM.ChamColor, ColorCallback = function(color) VM.ChamColor = color end, Callback = function(value) VM.Chams = value end })
+	viewmodelSection:Slider({ Name = "Cham Fill", Min = 0, Max = 100, Default = 50, Suffix = "%", Callback = function(value) VM.ChamFill = value / 100 end })
+	viewmodelSection:Slider({ Name = "Cham Outline", Min = 0, Max = 100, Default = 0, Suffix = "%", Callback = function(value) VM.ChamOutline = value / 100 end })
+
+	local RunService = game:GetService("RunService")
+	local appearance = setmetatable({}, { __mode = "k" })
+	local function viewmodels()
+		local camera = workspace.CurrentCamera
+		local list = {}
+		if not camera then return list end
+		for _, child in ipairs(camera:GetChildren()) do
+			if child:IsA("Model") and not child:FindFirstChildOfClass("Humanoid") then table.insert(list, child) end
+		end
+		return list
+	end
+
+	RunService.RenderStepped:Connect(function()
+		for _, model in ipairs(viewmodels()) do
+			if VM.Offset then
+				pcall(function() model:PivotTo(model:GetPivot() * CFrame.new(VM.X, VM.Y, VM.Z)) end)
+			end
+			local highlight = model:FindFirstChild("ParanoiaVMChams")
+			if VM.Chams then
+				if not highlight then
+					highlight = Instance.new("Highlight")
+					highlight.Name = "ParanoiaVMChams"
+					highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+					highlight.Parent = model
+				end
+				highlight.FillColor, highlight.OutlineColor = VM.ChamColor, VM.ChamColor
+				highlight.FillTransparency, highlight.OutlineTransparency = VM.ChamFill, VM.ChamOutline
+			elseif highlight then
+				highlight:Destroy()
+			end
+			for _, part in ipairs(model:GetDescendants()) do
+				if part:IsA("BasePart") then
+					local record = appearance[part]
+					if VM.Override then
+						if not record then record = { Color = part.Color, Material = part.Material, Transparency = part.Transparency } appearance[part] = record end
+						part.Color = VM.ColorValue
+						if VM.Material then part.Material = Enum.Material[VM.MaterialValue] or part.Material end
+						part.Transparency = math.max(record.Transparency, VM.Transparency)
+					elseif record then
+						part.Color, part.Material, part.Transparency = record.Color, record.Material, record.Transparency
+						appearance[part] = nil
+					end
+				elseif part:IsA("ParticleEmitter") and VM.Disable["muzzle flash"] then
+					part.Enabled = false
+				end
+			end
+		end
+	end)
+end
+
+local Automation = { Chat = { Enabled = false, Order = false, Texts = { "Paranoia on top" }, Index = 1 }, Respawn = false, Drops = false, SpoofDevice = false, Device = "computer", NameLocal = false, NameValue = "Paranoia", NameOthers = false, NameOtherValue = "Paranoia", HitNotify = false, HitDuration = 1, HitText = "Hit {NAME} for {DMG}" }
+do
+	local RunService = game:GetService("RunService")
+	local TextChatService = game:GetService("TextChatService")
+	local UserInputService = game:GetService("UserInputService")
+	local localPlayer = PX.Local
+	local chat = MiscAutomation:Section({ Name = "Chat Spam", Icon = Icon("automation", "robot"), Side = 1 })
+	chat:Toggle({ Name = "Chat Spam", Default = false, Callback = function(value) Automation.Chat.Enabled = value end })
+	chat:Toggle({ Name = "In Order", Default = false, Callback = function(value) Automation.Chat.Order = value end })
+	chat:Textbox({ Name = "Add Custom Text", Placeholder = "Add custom text", Callback = function(text)
+		if text and text ~= "" then table.insert(Automation.Chat.Texts, text) end
+	end })
+	chat:Button({ Name = "Reset Texts", Callback = function() Automation.Chat.Texts = { "Paranoia on top" } Automation.Chat.Index = 1 end })
+
+	local lastChat = 0
+	RunService.Heartbeat:Connect(function()
+		if not Automation.Chat.Enabled or os.clock() - lastChat < 3 then return end
+		lastChat = os.clock()
+		local texts = Automation.Chat.Texts
+		local index = Automation.Chat.Order and Automation.Chat.Index or math.random(1, #texts)
+		Automation.Chat.Index = Automation.Chat.Index % #texts + 1
+		pcall(function()
+			local channel = TextChatService:FindFirstChild("TextChannels") and TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+			if channel then channel:SendAsync(texts[index]) end
+		end)
+	end)
+
+	local arcade = MiscAutomation:Section({ Name = "Arcade", Icon = Icon("automation", "robot"), Side = 2 })
+	arcade:Toggle({ Name = "Automatically Grab Drops", Default = false, Callback = function(value) Automation.Drops = value end })
+	arcade:Toggle({ Name = "Auto Respawn", Default = false, Callback = function(value) Automation.Respawn = value end })
+
+	local lastDrop = 0
+	RunService.Heartbeat:Connect(function()
+		if not Automation.Drops or os.clock() - lastDrop < 0.5 then return end
+		lastDrop = os.clock()
+		local root = PX.root(localPlayer.Character)
+		if not (root and firetouchinterest) then return end
+		for _, object in ipairs(workspace:GetDescendants()) do
+			if object:IsA("BasePart") and not object:IsDescendantOf(localPlayer.Character) then
+				local name = string.lower(object.Name)
+				if (string.find(name, "ammo") or string.find(name, "drop") or string.find(name, "pickup")) and (object.Position - root.Position).Magnitude < 200 then
+					pcall(function() firetouchinterest(root, object, 0) firetouchinterest(root, object, 1) end)
+				end
+			end
+		end
+	end)
+
+	local function onCharacter(character)
+		local humanoid = character:WaitForChild("Humanoid", 5)
+		if not humanoid then return end
+		humanoid.Died:Connect(function()
+			if Automation.Respawn then
+				task.wait(0.5)
+				pcall(function() localPlayer:LoadCharacter() end)
+			end
+		end)
+	end
+	if localPlayer.Character then task.spawn(onCharacter, localPlayer.Character) end
+	localPlayer.CharacterAdded:Connect(onCharacter)
+
+	local info = MiscAutomation:Section({ Name = "Spoofers", Icon = Icon("automation", "robot"), Side = 1 })
+	info:Toggle({ Name = "Spoof Local Name", Default = false, Callback = function(value) Automation.NameLocal = value end })
+	info:Textbox({ Name = "Local Name", Placeholder = "Local name", Default = "Paranoia", Callback = function(text) Automation.NameValue = text end })
+	info:Toggle({ Name = "Spoof Other Names", Default = false, Callback = function(value) Automation.NameOthers = value end })
+	info:Textbox({ Name = "Other Name", Placeholder = "Name for others", Default = "Paranoia", Callback = function(text) Automation.NameOtherValue = text end })
+	info:Toggle({ Name = "Spoof Device", Default = false, Callback = function(value) Automation.SpoofDevice = value end })
+	info:Dropdown({ Name = "Device", Options = { "computer", "mobile", "controller", "virtual reality" }, Default = "computer", Callback = function(value) Automation.Device = value end })
+
+	local replaced = setmetatable({}, { __mode = "k" })
+	local lastNames = 0
+	RunService.Heartbeat:Connect(function()
+		if os.clock() - lastNames < 0.5 then return end
+		lastNames = os.clock()
+		if not (Automation.NameLocal or Automation.NameOthers) then
+			for label, text in pairs(replaced) do
+				pcall(function() label.Text = text end)
+				replaced[label] = nil
+			end
+			return
+		end
+		local gui = localPlayer:FindFirstChild("PlayerGui")
+		if not gui then return end
+		for _, label in ipairs(gui:GetDescendants()) do
+			if (label:IsA("TextLabel") or label:IsA("TextButton")) and label.Text ~= "" then
+				for _, player in ipairs(PX.Players:GetPlayers()) do
+					local isLocal = player == localPlayer
+					local wanted = isLocal and Automation.NameLocal and Automation.NameValue or (not isLocal and Automation.NameOthers and Automation.NameOtherValue)
+					if wanted and (label.Text == player.Name or label.Text == player.DisplayName) then
+						replaced[label] = replaced[label] or label.Text
+						label.Text = wanted
+					end
+				end
+			end
+		end
+	end)
+
+	if hookmetamethod and newcclosure then
+		local oldIndex
+		oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+			if Automation.SpoofDevice and self == UserInputService and not (checkcaller and checkcaller()) then
+				local device = Automation.Device
+				if key == "TouchEnabled" then return device == "mobile" end
+				if key == "KeyboardEnabled" or key == "MouseEnabled" then return device == "computer" end
+				if key == "GamepadEnabled" then return device == "controller" end
+				if key == "VREnabled" then return device == "virtual reality" end
+			end
+			return oldIndex(self, key)
+		end))
+	end
+
+	local notify = MiscAutomation:Section({ Name = "Notify Hit", Icon = Icon("preview", "smile"), Side = 2 })
+	notify:Toggle({ Name = "Notify Hit", Default = false, Callback = function(value) Automation.HitNotify = value end })
+	notify:Slider({ Name = "Notify Duration", Min = 0.1, Max = 3, Default = 1, Decimals = 1, Suffix = "s", Callback = function(value) Automation.HitDuration = value end })
+	notify:Textbox({ Name = "Notify Text", Placeholder = "Hit {NAME} for {DMG} in the {PART}", Default = "Hit {NAME} for {DMG}", Callback = function(text) if text ~= "" then Automation.HitText = text end end })
+	table.insert(HitSignals, function(player, character, damage, killed)
+		if not Automation.HitNotify then return end
+		local text = string.gsub(Automation.HitText, "{NAME}", player.DisplayName)
+		text = string.gsub(text, "{DMG}", tostring(math.floor(damage + 0.5)))
+		text = string.gsub(text, "{PART}", "body")
+		Window:Notify({ Title = "Hit", Text = text, Duration = Automation.HitDuration })
+	end)
+end
+
+do
+	local RunService = game:GetService("RunService")
+	local Lighting = game:GetService("Lighting")
+	local localPlayer = PX.Local
+	local section = VisualsLocal:Section({ Name = "Camera", Icon = Icon("local", "smile"), Side = 1 })
+	local state = { Flash = false, Fov = false, FovValue = 90, Aspect = false, AspectX = 1, AspectY = 1, Blur = 0, Vignette = false, NoSun = false, NoStars = false }
+	section:Toggle({ Name = "Anti Flashbang", Default = false, Callback = function(value) state.Flash = value end })
+	section:Toggle({ Name = "FOV Changer", Default = false, Callback = function(value) state.Fov = value end })
+	section:Slider({ Name = "Changer FOV", Min = 5, Max = 120, Default = 90, Callback = function(value) state.FovValue = value end })
+	section:Toggle({ Name = "Aspect Ratio", Default = false, Callback = function(value) state.Aspect = value end })
+	section:Slider({ Name = "Ratio X", Min = 0.01, Max = 1, Default = 1, Decimals = 2, Callback = function(value) state.AspectX = value end })
+	section:Slider({ Name = "Ratio Y", Min = 0.01, Max = 1, Default = 1, Decimals = 2, Callback = function(value) state.AspectY = value end })
+	section:Slider({ Name = "Blur", Min = 0, Max = 10, Default = 0, Decimals = 1, Suffix = "x", Callback = function(value) state.Blur = value end })
+	section:Toggle({ Name = "Remove Vignette", Default = false, Callback = function(value) state.Vignette = value end })
+	section:Toggle({ Name = "Disable Sun", Default = false, Callback = function(value) state.NoSun = value end })
+	section:Toggle({ Name = "Disable Stars", Default = false, Callback = function(value) state.NoStars = value end })
+
+	local blur = Instance.new("BlurEffect")
+	blur.Name = "ParanoiaBlur"
+	blur.Size = 0
+	blur.Enabled = false
+	blur.Parent = Lighting
+	local sunSize, starCount
+
+	RunService.RenderStepped:Connect(function()
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+		if state.Fov then camera.FieldOfView = state.FovValue end
+		if state.Aspect and (state.AspectX < 1 or state.AspectY < 1) then
+			camera.CFrame = camera.CFrame * CFrame.new(0, 0, 0, state.AspectX, 0, 0, 0, state.AspectY, 0, 0, 0, 1)
+		end
+		blur.Enabled = state.Blur > 0
+		blur.Size = state.Blur * 4
+		local sky = Lighting:FindFirstChildOfClass("Sky")
+		if sky then
+			sunSize = sunSize or sky.SunAngularSize
+			starCount = starCount or sky.StarCount
+			sky.SunAngularSize = state.NoSun and 0 or sunSize
+			sky.StarCount = state.NoStars and 0 or starCount
+		end
+		if state.Flash then
+			for _, effect in ipairs(Lighting:GetChildren()) do
+				if string.find(string.lower(effect.Name), "flash") and effect:IsA("PostEffect") then effect.Enabled = false end
+			end
+			for _, effect in ipairs(camera:GetChildren()) do
+				if string.find(string.lower(effect.Name), "flash") and effect:IsA("PostEffect") then effect.Enabled = false end
+			end
+		end
+	end)
+
+	local lastScan = 0
+	RunService.Heartbeat:Connect(function()
+		if os.clock() - lastScan < 0.4 then return end
+		lastScan = os.clock()
+		local gui = localPlayer:FindFirstChild("PlayerGui")
+		if not gui then return end
+		for _, object in ipairs(gui:GetDescendants()) do
+			if object:IsA("GuiObject") and object.Name ~= "ParanoiaAimbot" then
+				local name = string.lower(object.Name)
+				if state.Vignette and string.find(name, "vignette") then object.Visible = false end
+				if state.Flash and (string.find(name, "flashbang") or name == "flash" or name == "flashframe") then
+					object.Visible = false
+				end
+			end
+		end
+	end)
+
+	local effects = VisualsLocal:Section({ Name = "Lighting Effects", Icon = Icon("world", "globe"), Side = 2 })
+	local cc = Instance.new("ColorCorrectionEffect")
+	cc.Name = "ParanoiaColorCorrection"
+	cc.Enabled = false
+	cc.Parent = Lighting
+	local bloom = Instance.new("BloomEffect")
+	bloom.Name = "ParanoiaBloom"
+	bloom.Enabled = false
+	bloom.Parent = Lighting
+	local rays = Instance.new("SunRaysEffect")
+	rays.Name = "ParanoiaSunRays"
+	rays.Enabled = false
+	rays.Parent = Lighting
+	local atmosphere = Instance.new("Atmosphere")
+	atmosphere.Name = "ParanoiaAtmosphere"
+	local previousAtmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+
+	effects:Toggle({ Name = "Color Correction", Default = false, Color = Color3.fromRGB(255, 255, 255), ColorCallback = function(color) cc.TintColor = color end, Callback = function(value) cc.Enabled = value end })
+	effects:Slider({ Name = "Saturation", Min = -10, Max = 10, Default = 0, Decimals = 1, Callback = function(value) cc.Saturation = value end })
+	effects:Slider({ Name = "Contrast", Min = -10, Max = 10, Default = 0, Decimals = 1, Callback = function(value) cc.Contrast = value end })
+	effects:Slider({ Name = "Color Brightness", Min = -1, Max = 1, Default = 0, Decimals = 2, Callback = function(value) cc.Brightness = value end })
+	effects:Toggle({ Name = "Bloom", Default = false, Callback = function(value) bloom.Enabled = value end })
+	effects:Slider({ Name = "Bloom Intensity", Min = 0, Max = 10, Default = 1, Decimals = 1, Callback = function(value) bloom.Intensity = value end })
+	effects:Slider({ Name = "Bloom Size", Min = 0, Max = 100, Default = 24, Callback = function(value) bloom.Size = value end })
+	effects:Slider({ Name = "Bloom Threshold", Min = 0.1, Max = 1, Default = 0.8, Decimals = 2, Callback = function(value) bloom.Threshold = value end })
+	effects:Toggle({ Name = "Sun Rays", Default = false, Callback = function(value) rays.Enabled = value end })
+	effects:Slider({ Name = "Rays Intensity", Min = 0, Max = 1, Default = 0.25, Decimals = 2, Callback = function(value) rays.Intensity = value end })
+	effects:Slider({ Name = "Rays Spread", Min = 0, Max = 1, Default = 1, Decimals = 2, Callback = function(value) rays.Spread = value end })
+	effects:Toggle({ Name = "Atmosphere", Default = false, Color = Color3.fromRGB(199, 199, 199), ColorCallback = function(color) atmosphere.Color = color end, Callback = function(value)
+		if value then
+			if previousAtmosphere then previousAtmosphere.Parent = nil end
+			atmosphere.Parent = Lighting
+		else
+			atmosphere.Parent = nil
+			if previousAtmosphere then previousAtmosphere.Parent = Lighting end
+		end
+	end })
+	effects:Slider({ Name = "Glare", Min = 0, Max = 10, Default = 1.5, Decimals = 1, Callback = function(value) atmosphere.Glare = value end })
+	effects:Slider({ Name = "Haze", Min = 0, Max = 10, Default = 10, Decimals = 1, Callback = function(value) atmosphere.Haze = value end })
+	effects:Slider({ Name = "Atmosphere Offset", Min = 0, Max = 1, Default = 0.4, Decimals = 2, Callback = function(value) atmosphere.Offset = value end })
+	effects:Slider({ Name = "Density", Min = 0, Max = 1, Default = 0.5, Decimals = 2, Callback = function(value) atmosphere.Density = value end })
+end
+
+do
+	local RunService = game:GetService("RunService")
+	local UserInputService = game:GetService("UserInputService")
+	local TweenService = game:GetService("TweenService")
+	local Debris = game:GetService("Debris")
+	local localPlayer = PX.Local
+	local gui = PX.gui("ParanoiaCrosshair", 43)
+
+	local C = { Enabled = false, Outline = true, Rotation = 0, Speed = 0.2, Bounce = 0, BounceSpeed = 1, Offset = 5, Length = 20, Thickness = 2, Color = Color3.fromRGB(230, 160, 255), DisableGame = false, Position = false }
+	local holder = Instance.new("Frame")
+	holder.AnchorPoint = Vector2.new(0.5, 0.5)
+	holder.BackgroundTransparency = 1
+	holder.Size = UDim2.fromOffset(0, 0)
+	holder.Visible = false
+	holder.Parent = gui
+	local bars = {}
+	for index = 1, 4 do
+		local bar = Instance.new("Frame")
+		bar.AnchorPoint = Vector2.new(0.5, 0.5)
+		bar.BorderSizePixel = 0
+		bar.Parent = holder
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.new(0, 0, 0)
+		stroke.Parent = bar
+		bars[index] = { Bar = bar, Stroke = stroke }
+	end
+
+	local section = VisualsLocal:Section({ Name = "Custom Crosshair", Icon = Icon("local", "smile"), Side = 1 })
+	section:Toggle({ Name = "Custom Crosshair", Default = false, Color = C.Color, ColorCallback = function(color) C.Color = color end, Callback = function(value) C.Enabled = value end })
+	section:Toggle({ Name = "Crosshair Outline", Default = true, Callback = function(value) C.Outline = value end })
+	section:Slider({ Name = "Crosshair Rotation", Min = 0, Max = 360, Default = 0, Suffix = "deg", Callback = function(value) C.Rotation = value end })
+	section:Slider({ Name = "Spin Speed", Min = 0, Max = 5, Default = 0.2, Decimals = 1, Suffix = "rps", Callback = function(value) C.Speed = value end })
+	section:Slider({ Name = "Bounce", Min = 0, Max = 300, Default = 0, Suffix = "px", Callback = function(value) C.Bounce = value end })
+	section:Slider({ Name = "Bounce Speed", Min = 0.1, Max = 5, Default = 1, Decimals = 1, Suffix = "x", Callback = function(value) C.BounceSpeed = value end })
+	section:Slider({ Name = "Crosshair Offset", Min = 0, Max = 100, Default = 5, Suffix = "px", Callback = function(value) C.Offset = value end })
+	section:Slider({ Name = "Arm Length", Min = 5, Max = 500, Default = 20, Suffix = "px", Callback = function(value) C.Length = value end })
+	section:Slider({ Name = "Arm Thickness", Min = 1, Max = 10, Default = 2, Suffix = "px", Callback = function(value) C.Thickness = value end })
+	section:Toggle({ Name = "Position On Target", Default = false, Callback = function(value) C.Position = value end })
+	section:Toggle({ Name = "Disable Game Crosshair", Default = false, Callback = function(value) C.DisableGame = value end })
+
+	local lastScan = 0
+	RunService.RenderStepped:Connect(function(dt)
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+		holder.Visible = C.Enabled
+		if C.Enabled then
+			local viewport = camera.ViewportSize
+			local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
+			if C.Position then
+				local target = SilentState.Part or nil
+				if target then
+					local point, onScreen = camera:WorldToViewportPoint(target.Position)
+					if onScreen then center = Vector2.new(point.X, point.Y) end
+				end
+			end
+			holder.Position = UDim2.fromOffset(center.X, center.Y)
+			holder.Rotation = (C.Rotation + os.clock() * C.Speed * 360) % 360
+			local bounce = C.Bounce > 0 and (math.sin(os.clock() * C.BounceSpeed * math.pi * 2) * 0.5 + 0.5) * C.Bounce or 0
+			local distance = C.Offset + C.Length / 2 + bounce
+			local layout = {
+				{ 0, -distance, C.Thickness, C.Length },
+				{ 0, distance, C.Thickness, C.Length },
+				{ -distance, 0, C.Length, C.Thickness },
+				{ distance, 0, C.Length, C.Thickness },
+			}
+			for index, spec in ipairs(layout) do
+				local entry = bars[index]
+				entry.Bar.Position = UDim2.fromOffset(spec[1], spec[2])
+				entry.Bar.Size = UDim2.fromOffset(spec[3], spec[4])
+				entry.Bar.BackgroundColor3 = C.Color
+				entry.Stroke.Enabled = C.Outline
+			end
+		end
+		if C.DisableGame and os.clock() - lastScan > 0.4 then
+			lastScan = os.clock()
+			local playerGui = localPlayer:FindFirstChild("PlayerGui")
+			if playerGui then
+				for _, object in ipairs(playerGui:GetDescendants()) do
+					if object:IsA("GuiObject") and string.lower(object.Name) == "crosshair" and not object:IsDescendantOf(gui) then object.Visible = false end
+				end
+			end
+		end
+	end)
+
+	local tracer = { Enabled = false, Color = Color3.fromRGB(230, 160, 255), Lifetime = 1, Fade = 1, Width = 0.3, Glow = false }
+	local tracerSection = VisualsLocal:Section({ Name = "Custom Tracers", Icon = Icon("effects", "globe"), Side = 2 })
+	tracerSection:Toggle({ Name = "Custom Tracers", Default = false, Color = tracer.Color, ColorCallback = function(color) tracer.Color = color end, Callback = function(value) tracer.Enabled = value end })
+	tracerSection:Slider({ Name = "Tracer Lifetime", Min = 0.1, Max = 3, Default = 1, Decimals = 1, Suffix = "s", Callback = function(value) tracer.Lifetime = value end })
+	tracerSection:Slider({ Name = "Tracer Fade", Min = 0.1, Max = 3, Default = 1, Decimals = 1, Suffix = "s", Callback = function(value) tracer.Fade = value end })
+	tracerSection:Slider({ Name = "Tracer Size", Min = 0.1, Max = 3, Default = 0.3, Decimals = 1, Callback = function(value) tracer.Width = value end })
+	tracerSection:Toggle({ Name = "Tracer Glow", Default = false, Callback = function(value) tracer.Glow = value end })
+
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed or not tracer.Enabled or input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+		local camera = workspace.CurrentCamera
+		local character = localPlayer.Character
+		if not (camera and character) then return end
+		local origin = camera.CFrame.Position + camera.CFrame.LookVector * 1 + camera.CFrame.RightVector * 0.6 - camera.CFrame.UpVector * 0.5
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { character, camera }
+		local result = workspace:Raycast(camera.CFrame.Position, camera.CFrame.LookVector * 1000, params)
+		local goal = result and result.Position or camera.CFrame.Position + camera.CFrame.LookVector * 1000
+		local length = (goal - origin).Magnitude
+		local beam = Instance.new("Part")
+		beam.Anchored, beam.CanCollide, beam.CanQuery, beam.CanTouch = true, false, false, false
+		beam.Material = tracer.Glow and Enum.Material.Neon or Enum.Material.SmoothPlastic
+		beam.Color = tracer.Color
+		beam.Size = Vector3.new(tracer.Width, tracer.Width, length)
+		beam.CFrame = CFrame.lookAt(origin, goal) * CFrame.new(0, 0, -length / 2)
+		beam.Parent = workspace
+		Debris:AddItem(beam, tracer.Lifetime + tracer.Fade + 0.1)
+		task.delay(tracer.Lifetime, function()
+			if beam.Parent then TweenService:Create(beam, TweenInfo.new(tracer.Fade), { Transparency = 1 }):Play() end
+		end)
+	end)
+end
+
+do
+	local SoundService = game:GetService("SoundService")
+	local HitSounds = { Enabled = false, Volume = 0.5, Selected = "neverlose" }
+	local IDS = {
+		neverlose = "rbxassetid://8726881116",
+		skeet = "rbxassetid://5447626464",
+		rust = "rbxassetid://1255040462",
+		bameware = "rbxassetid://3124331820",
+		bell = "rbxassetid://6534947240",
+	}
+	local names = {}
+	for name in pairs(IDS) do table.insert(names, name) end
+	table.sort(names)
+	local section = VisualsHits:Section({ Name = "Hit Sounds", Icon = Icon("effects", "globe"), Side = 1 })
+	section:Toggle({ Name = "Hit Sounds", Default = false, Callback = function(value) HitSounds.Enabled = value end })
+	section:Slider({ Name = "Sound Volume", Min = 0.1, Max = 2, Default = 0.5, Decimals = 1, Callback = function(value) HitSounds.Volume = value end })
+	section:Dropdown({ Name = "Hit Sound", Options = names, Default = "neverlose", Callback = function(value) HitSounds.Selected = value end })
+	local function play()
+		local sound = Instance.new("Sound")
+		sound.SoundId = IDS[HitSounds.Selected] or IDS.neverlose
+		sound.Volume = HitSounds.Volume
+		sound.Parent = SoundService
+		sound.Ended:Connect(function() sound:Destroy() end)
+		sound:Play()
+	end
+	section:Button({ Name = "Preview Sound", Callback = play })
+	table.insert(HitSignals, function() if HitSounds.Enabled then play() end end)
+end
+
+do
+	local RunService = game:GetService("RunService")
+	local UserInputService = game:GetService("UserInputService")
+	local localPlayer = PX.Local
+	local M = { Velocity = false, VelocitySpeed = 50, Slide = false, SlideValue = 1, DoubleJump = false, DoubleJumpValue = 1, InfiniteDouble = false, Fly = false, FlySpeed = 50, Third = false, Head = false }
+	local section = MovementMain:Section({ Name = "Advanced", Icon = Icon("movement", "smile"), Side = 2 })
+	section:Toggle({ Name = "Velocity", Default = false, Keybind = Enum.KeyCode.X, Callback = function(value) M.Velocity = value end })
+	section:Slider({ Name = "Velocity Speed", Min = 10, Max = 250, Default = 50, Suffix = "s", Callback = function(value) M.VelocitySpeed = value end })
+	section:Toggle({ Name = "Slide Boost", Default = false, Callback = function(value) M.Slide = value end })
+	section:Slider({ Name = "Slide Boost Amount", Min = 1, Max = 5, Default = 1, Decimals = 1, Suffix = "x", Callback = function(value) M.SlideValue = value end })
+	section:Toggle({ Name = "Double Jump Height", Default = false, Callback = function(value) M.DoubleJump = value end })
+	section:Slider({ Name = "Double Jump Multiplier", Min = 1, Max = 10, Default = 1, Decimals = 1, Suffix = "x", Callback = function(value) M.DoubleJumpValue = value end })
+	section:Toggle({ Name = "Infinite Double Jump", Default = false, Callback = function(value) M.InfiniteDouble = value end })
+	section:Toggle({ Name = "Fly", Default = false, Keybind = Enum.KeyCode.F, Callback = function(value) M.Fly = value end })
+	section:Slider({ Name = "Fly Speed", Min = 50, Max = 500, Default = 50, Suffix = "s", Callback = function(value) M.FlySpeed = value end })
+	section:Toggle({ Name = "Third Person", Default = false, Keybind = Enum.KeyCode.P, Callback = function(value) M.Third = value end })
+
+	local function directionFromInput(camera)
+		local move = Vector3.zero
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += camera.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= camera.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= camera.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += camera.CFrame.RightVector end
+		return move
+	end
+
+	UserInputService.JumpRequest:Connect(function()
+		local character = localPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not (humanoid and root) then return end
+		local state = humanoid:GetState()
+		if state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping then
+			if M.InfiniteDouble or M.DoubleJump then
+				if M.DoubleJump then
+					root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, humanoid.JumpPower * M.DoubleJumpValue, root.AssemblyLinearVelocity.Z)
+				elseif M.InfiniteDouble then
+					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+				end
+			end
+		end
+	end)
+
+	RunService.Heartbeat:Connect(function()
+		local character = localPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local camera = workspace.CurrentCamera
+		if not (humanoid and root and camera) then return end
+		if M.Fly then
+			local direction = directionFromInput(camera)
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then direction += Vector3.yAxis end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then direction -= Vector3.yAxis end
+			root.AssemblyLinearVelocity = direction.Magnitude > 0 and direction.Unit * M.FlySpeed or Vector3.zero
+			humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+		elseif M.Velocity and humanoid.MoveDirection.Magnitude > 0 then
+			local direction = humanoid.MoveDirection
+			root.AssemblyLinearVelocity = Vector3.new(direction.X * M.VelocitySpeed, root.AssemblyLinearVelocity.Y, direction.Z * M.VelocitySpeed)
+		end
+		if M.Slide and humanoid:GetState() == Enum.HumanoidStateType.Running and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) and humanoid.MoveDirection.Magnitude > 0 then
+			local velocity = root.AssemblyLinearVelocity
+			root.AssemblyLinearVelocity = Vector3.new(velocity.X * (1 + 0.02 * (M.SlideValue - 1) + 0.0), velocity.Y, velocity.Z * (1 + 0.02 * (M.SlideValue - 1)))
+		end
+		if M.Third then
+			localPlayer.CameraMode = Enum.CameraMode.Classic
+			localPlayer.CameraMaxZoomDistance = 12
+			localPlayer.CameraMinZoomDistance = 12
+		elseif localPlayer.CameraMinZoomDistance == 12 then
+			localPlayer.CameraMinZoomDistance = 0.5
+			localPlayer.CameraMaxZoomDistance = 128
+		end
+	end)
+end
+
+do
+	local RunService = game:GetService("RunService")
+	local localPlayer = PX.Local
+	local section = MiscCharacter:Section({ Name = "Animation Player", Icon = Icon("character", "smile"), Side = 1 })
+	local A = { Enabled = false, Animation = "custom", Custom = "", Speed = 1, Start = 0, End = 100, Track = nil }
+	local PRESETS = {
+		dance = "rbxassetid://507771019",
+		dance2 = "rbxassetid://507776043",
+		wave = "rbxassetid://507770239",
+		cheer = "rbxassetid://507770677",
+		laugh = "rbxassetid://507770818",
+		point = "rbxassetid://507770453",
+	}
+	local names = { "custom" }
+	for name in pairs(PRESETS) do table.insert(names, name) end
+	table.sort(names)
+
+	section:Toggle({ Name = "Animation Player", Default = false, Keybind = Enum.KeyCode.J, Callback = function(value)
+		A.Enabled = value
+		if not value and A.Track then A.Track:Stop() A.Track = nil end
+	end })
+	section:Dropdown({ Name = "Animation", Options = names, Default = "custom", Callback = function(value)
+		A.Animation = value
+		if A.Track then A.Track:Stop() A.Track = nil end
+	end })
+	section:Textbox({ Name = "Custom Animation", Placeholder = "Animation ID", Callback = function(text) A.Custom = text if A.Track then A.Track:Stop() A.Track = nil end end })
+	section:Slider({ Name = "Animation Speed", Min = 0, Max = 10, Default = 1, Decimals = 1, Callback = function(value) A.Speed = value end })
+	section:Slider({ Name = "Start", Min = 0, Max = 100, Default = 0, Suffix = "%", Callback = function(value) A.Start = value end })
+	section:Slider({ Name = "End", Min = 0, Max = 100, Default = 100, Suffix = "%", Callback = function(value) A.End = value end })
+
+	RunService.Heartbeat:Connect(function()
+		if not A.Enabled then return end
+		local character = localPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local animator = humanoid and (humanoid:FindFirstChildOfClass("Animator") or humanoid:WaitForChild("Animator", 1))
+		if not animator then return end
+		if not A.Track then
+			local id = A.Animation == "custom" and A.Custom or PRESETS[A.Animation]
+			if not id or id == "" then return end
+			if tonumber(id) then id = "rbxassetid://" .. id end
+			local animation = Instance.new("Animation")
+			animation.AnimationId = id
+			local ok, track = pcall(function() return animator:LoadAnimation(animation) end)
+			if not ok then return end
+			track.Priority = Enum.AnimationPriority.Action4
+			track.Looped = true
+			track:Play()
+			A.Track = track
+		end
+		local track = A.Track
+		track:AdjustSpeed(A.Speed)
+		local length = track.Length
+		if length > 0 then
+			local startTime, endTime = length * A.Start / 100, length * math.max(A.End, A.Start + 1) / 100
+			if track.TimePosition < startTime or track.TimePosition > endTime then track.TimePosition = startTime end
+		end
+	end)
+end
 
 Window:BuildSettings(Settings)
 finishNav()
