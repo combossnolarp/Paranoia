@@ -119,17 +119,64 @@ if not Blossom then
 		local]]
 		src = replace(src, "local alphaBar = new%(\"Frame\", { Bg = \"Background\", Position = Offset%(pad %+ 1, alphaY %+ 1%)", checkerboardCode .. " alphaBar = new(\"Frame\", { Bg = \"Background\", Position = Offset(pad + 1, alphaY + 1)")
 
-		src = replacePlain(src,
-			"\tbutton.MouseButton1Click:Connect(function()\n\t\tobject.Listening = true\n\t\twin.Listening = object\n\t\tobject.Refresh()\n\tend)\n\tbutton.MouseButton2Click:Connect(function() win:OpenKeybindMenu(chip, object) end)",
-			"\tfunction object.StartListening()\n\t\tobject.Listening = true\n\t\twin.Listening = object\n\t\tobject.Refresh()\n\tend\n\tlocal holdId, held = 0, false\n\tbutton.MouseButton1Down:Connect(function()\n\t\tholdId += 1\n\t\theld = false\n\t\tlocal id = holdId\n\t\ttask.delay(0.35, function()\n\t\t\tif holdId == id and button.Parent then\n\t\t\t\theld = true\n\t\t\t\twin:OpenKeybindMenu(chip, object)\n\t\t\tend\n\t\tend)\n\tend)\n\tbutton.MouseButton1Up:Connect(function() holdId += 1 end)\n\tbutton.MouseLeave:Connect(function() holdId += 1 end)\n\tbutton.TouchLongPress:Connect(function(_, state)\n\t\tif state == Enum.UserInputState.Begin and not held then\n\t\t\theld = true\n\t\t\twin:OpenKeybindMenu(chip, object)\n\t\tend\n\tend)\n\tbutton.MouseButton1Click:Connect(function()\n\t\tif held then held = false return end\n\t\twin:OpenKeybindMenu(chip, object)\n\tend)\n\tbutton.MouseButton2Click:Connect(function() win:OpenKeybindMenu(chip, object) end)")
+		src = replacePlain(src, [==[	button.MouseButton1Click:Connect(function()
+		object.Listening = true
+		win.Listening = object
+		object.Refresh()
+	end)
+	button.MouseButton2Click:Connect(function() win:OpenKeybindMenu(chip, object) end)]==], [==[	function object.StartListening()
+		object.Listening = true
+		win.Listening = object
+		object.Refresh()
+	end
+	local holdId, held = 0, false
+	local function startHold()
+		holdId += 1
+		held = false
+		local id = holdId
+		task.delay(0.35, function()
+			if holdId == id and button.Parent and not held then
+				held = true
+				win:OpenKeybindMenu(chip, object)
+			end
+		end)
+	end
+	local function cancelHold() holdId += 1 end
+	button.MouseButton1Down:Connect(startHold)
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then startHold() end
+	end)
+	button.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then cancelHold() end
+	end)
+	button.TouchLongPress:Connect(function(_, state)
+		if state == Enum.UserInputState.Begin and not held then
+			held = true
+			win:OpenKeybindMenu(chip, object)
+		end
+	end)
+	button.MouseButton1Click:Connect(function()
+		if held then held = false return end
+		win:OpenKeybindMenu(chip, object)
+	end)
+	button.MouseButton2Click:Connect(function() win:OpenKeybindMenu(chip, object) end)]==])
 
 		src = replacePlain(src,
 			"\t\t\tif toggle.Keybind.Mode == \"Hold\" then toggle:Set(true) else toggle:Set(not toggle.Value) end\n\t\tend\n\t\ttoggle.Keybind.OnRelease = function()\n\t\t\tif toggle.Keybind.Mode == \"Hold\" then toggle:Set(false) end\n\t\tend",
 			"\t\t\tlocal mode = toggle.Keybind.Mode\n\t\t\tif mode == \"Always\" then return end\n\t\t\tif mode == \"Hold\" then toggle:Set(true) else toggle:Set(not toggle.Value) end\n\t\tend\n\t\ttoggle.Keybind.OnRelease = function()\n\t\t\tif toggle.Keybind.Mode == \"Hold\" then toggle:Set(false) end\n\t\tend\n\t\ttoggle.Keybind.OnModeChanged = function(mode, previous)\n\t\t\tif mode == \"Always\" then toggle:Set(true) elseif previous == \"Always\" then toggle:Set(false) end\n\t\tend\n\t\ttoggle.Keybind.GetState = function() return toggle.Value end")
 
+		src = replacePlain(src, [==[		if isClick(input) then
+			local point = mousePos()]==], [==[		if isClick(input) then
+			local point = mousePos()
+			local rawPoint = point
+			if input.UserInputType == Enum.UserInputType.Touch then
+				rawPoint = Vector2.new(input.Position.X, input.Position.Y) + (ScreenRef and ScreenRef.AbsolutePosition or Vector2.zero)
+				point = rawPoint + game:GetService("GuiService"):GetGuiInset()
+			end]==])
+
 		src = replacePlain(src,
-			"\t\tif isClick(input) then\n\t\t\tlocal point = mousePos()",
-			"\t\tif isClick(input) then\n\t\t\tlocal point = mousePos()\n\t\t\tif input.UserInputType == Enum.UserInputType.Touch then\n\t\t\t\tpoint = Vector2.new(input.Position.X, input.Position.Y) + game:GetService(\"GuiService\"):GetGuiInset() + (ScreenRef and ScreenRef.AbsolutePosition or Vector2.zero)\n\t\t\tend")
+			"if win.ActivePopup and not overDropdown and not inside(win.ActivePopup.Frame, point, 6) then",
+			"if win.ActivePopup and not overDropdown and not inside(win.ActivePopup.Frame, point, 6) and not inside(win.ActivePopup.Frame, rawPoint, 6) then")
 
 		do
 			local menuStart = string.find(src, "function Window:_buildKeybindMenu()", 1, true)
@@ -737,7 +784,15 @@ local function finishNav()
 end
 
 Category("Combat")
-local AimbotTab = Tab({ Name = "Aimbot", Icon = Icon("aimassist", "target") })
+local RageMain, RageAntiAim = Group({ Name = "Rage", Icon = Icon("rage", "target") }, {
+	{ Name = "Ragebot", Icon = Icon("ragebot", "robot") },
+	{ Name = "Anti Aim", Icon = Icon("antiaim", "wrench") },
+})
+local LegitAim, LegitSilent, LegitTrigger = Group({ Name = "Legit", Icon = Icon("legit", "bullet") }, {
+	{ Name = "Aim Assist", Icon = Icon("aimassist", "target") },
+	{ Name = "Silent Aim", Icon = Icon("silent", "bullet") },
+	{ Name = "Triggerbot", Icon = Icon("trigger", "bullet") },
+})
 Category("Visuals")
 local EspMain, EspInfo, EspWorld, EspCosmetics = Group({ Name = "ESP", Icon = Icon("esp", "smile") }, {
 	{ Name = "Main", Icon = Icon("esp", "smile") },
@@ -745,7 +800,22 @@ local EspMain, EspInfo, EspWorld, EspCosmetics = Group({ Name = "ESP", Icon = Ic
 	{ Name = "World", Icon = Icon("world", "globe") },
 	{ Name = "Cosmetics", Icon = Icon("preview", "smile") },
 })
-local VisualsTab = Tab({ Name = "Visuals", Icon = Icon("effects", "globe") })
+local VisualsLocal, VisualsCosmetics, VisualsHits, VisualsGrenades = Group({ Name = "Visuals", Icon = Icon("effects", "globe") }, {
+	{ Name = "Local", Icon = Icon("local", "smile") },
+	{ Name = "Cosmetics", Icon = Icon("character", "smile") },
+	{ Name = "Hit Registration", Icon = Icon("silent", "bullet") },
+	{ Name = "Grenades", Icon = Icon("targeting", "bullet") },
+})
+Category("Misc")
+local MiscCharacter, MiscWeapons, MiscAutomation = Group({ Name = "Misc", Icon = Icon("misc", "cube") }, {
+	{ Name = "Character", Icon = Icon("character", "smile") },
+	{ Name = "Weapon Mods", Icon = Icon("weaponmods", "wrench") },
+	{ Name = "Automation", Icon = Icon("automation", "robot") },
+})
+Category("Player")
+local MovementMain = Group({ Name = "Movement", Icon = Icon("movement", "smile") }, {
+	{ Name = "Character", Icon = Icon("speed", "smile") },
+})
 local Settings = Tab({ Name = "Settings", Icon = Icon("settings", "gear") })
 
 local EspState = { Enabled = false, TeamCheck = false, LimitDistance = false, MaxDistance = 1000, Font = "Inter", Elements = {} }
@@ -782,17 +852,15 @@ do
 	local mainSection = EspMain:Section({ Name = "Main", Icon = Icon("esp", "smile"), Side = 1 })
 	local infoSection = EspInfo:Section({ Name = "Info", Icon = Icon("esp", "smile"), Side = 1 })
 	local mainPreview = EspMain:Section({ Name = "Preview", Icon = Icon("preview", "smile"), Side = 2 })
-	local worldSection = EspWorld:Section({ Name = "World", Icon = Icon("world", "globe"), Side = 1 })
-	local cosmeticsPreview = EspCosmetics:Section({ Name = "Preview", Icon = Icon("preview", "smile"), Side = 2 })
 
 	mainSection:Toggle({ Name = "Enabled", Default = false, Callback = function(value) EspState.Enabled = value end })
 	mainSection:Toggle({ Name = "Team Check", Default = false, Callback = function(value) EspState.TeamCheck = value end })
 	local maxDistance
-	worldSection:Toggle({ Name = "Limit Distance", Default = false, Callback = function(value)
+	mainSection:Toggle({ Name = "Limit Distance", Default = false, Callback = function(value)
 		EspState.LimitDistance = value
 		setShown(maxDistance, value)
 	end })
-	maxDistance = worldSection:Slider({ Name = "Max Distance", Min = 1, Max = 100000, Default = EspState.MaxDistance, Suffix = " studs", Callback = function(value) EspState.MaxDistance = value end })
+	maxDistance = mainSection:Slider({ Name = "Max Distance", Min = 1, Max = 100000, Default = EspState.MaxDistance, Suffix = " studs", Callback = function(value) EspState.MaxDistance = value end })
 	setShown(maxDistance, EspState.LimitDistance)
 
 	local previewFonts = {}
@@ -1104,7 +1172,6 @@ do
 		end)
 	end
 	buildPreview(mainPreview)
-	buildPreview(cosmeticsPreview)
 end
 
 do
@@ -1451,6 +1518,7 @@ do
 	end)
 end
 
+local Fire = { Last = 0, Held = false }
 local AimState = { Enabled = false, Fov = 120, DrawFov = true, FovColor = Color3.fromRGB(230, 160, 255), Smoothing = 35, AimPoint = "Head", TeamCheck = true, WallCheck = true, MaxDistance = 1000 }
 do
 	local RunService = game:GetService("RunService")
@@ -1479,14 +1547,14 @@ do
 	circleStroke.Thickness = 1
 	circleStroke.Parent = circle
 
-	local section = AimbotTab:Section({ Name = "Aimbot", Icon = Icon("aimassist", "target"), Side = 1 })
+	local section = LegitAim:Section({ Name = "Aim Assist", Icon = Icon("aimassist", "target"), Side = 1 })
 	section:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.UserInputType.MouseButton2, KeybindMode = "Hold", Callback = function(value) AimState.Enabled = value end })
 	section:Dropdown({ Name = "Aim Point", Options = { "Head", "Torso", "Closest" }, Default = "Head", Callback = function(value) AimState.AimPoint = value end })
 	section:Slider({ Name = "Smoothing", Min = 0, Max = 95, Default = AimState.Smoothing, Suffix = "%", Callback = function(value) AimState.Smoothing = value end })
 	section:Toggle({ Name = "Team Check", Default = true, Callback = function(value) AimState.TeamCheck = value end })
 	section:Toggle({ Name = "Wall Check", Default = true, Callback = function(value) AimState.WallCheck = value end })
 	section:Slider({ Name = "Max Distance", Min = 50, Max = 5000, Default = AimState.MaxDistance, Suffix = " studs", Callback = function(value) AimState.MaxDistance = value end })
-	local fovSection = AimbotTab:Section({ Name = "FOV", Icon = Icon("targeting", "bullet"), Side = 2 })
+	local fovSection = LegitAim:Section({ Name = "FOV", Icon = Icon("targeting", "bullet"), Side = 2 })
 	fovSection:Slider({ Name = "FOV Size", Min = 10, Max = 800, Default = AimState.Fov, Suffix = "px", Callback = function(value) AimState.Fov = value end })
 	fovSection:Toggle({ Name = "Draw FOV", Default = true, Color = AimState.FovColor, ColorCallback = function(color) AimState.FovColor = color end, Callback = function(value) AimState.DrawFov = value end })
 
@@ -1566,7 +1634,7 @@ do
 	local Players = game:GetService("Players")
 	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
-	local camera = VisualsTab:Section({ Name = "Camera", Icon = Icon("local", "smile"), Side = 1 })
+	local camera = VisualsLocal:Section({ Name = "Camera", Icon = Icon("local", "smile"), Side = 1 })
 	local fov = { Enabled = false, Value = 90 }
 	camera:Toggle({ Name = "Field Of View", Default = false, Callback = function(value) fov.Enabled = value end })
 	camera:Slider({ Name = "FOV", Min = 30, Max = 120, Default = 90, Callback = function(value) fov.Value = value end })
@@ -1597,7 +1665,7 @@ do
 	end
 
 	local lighting = { Enabled = false, Time = 14, Brightness = 2, Fog = false, FogStart = 100, FogEnd = 800, Ambient = Color3.fromRGB(120, 120, 140) }
-	local world = VisualsTab:Section({ Name = "Lighting", Icon = Icon("world", "globe"), Side = 2 })
+	local world = VisualsLocal:Section({ Name = "Lighting", Icon = Icon("world", "globe"), Side = 2 })
 	world:Toggle({ Name = "Override Lighting", Default = false, Callback = function(value) lighting.Enabled = value end })
 	world:Slider({ Name = "Clock Time", Min = 0, Max = 24, Default = lighting.Time, Decimals = 1, Callback = function(value) lighting.Time = value end })
 	world:Slider({ Name = "Brightness", Min = 0, Max = 10, Default = lighting.Brightness, Decimals = 1, Callback = function(value) lighting.Brightness = value end })
@@ -1651,6 +1719,570 @@ do
 		end
 	end)
 end
+
+local RageState = { Enabled = false, Priority = "Closest", Hitbox = "Head", TeamCheck = true, WallCheck = false, Range = 300, AutoFire = true, FireDelay = 80, KnifeMode = false, KnifeRange = 14 }
+do
+	local RunService = game:GetService("RunService")
+	local Players = game:GetService("Players")
+	local localPlayer = Players.LocalPlayer
+	local lastShot = 0
+
+	local section = RageMain:Section({ Name = "Ragebot", Icon = Icon("ragebot", "robot"), Side = 1 })
+	section:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.C, Callback = function(value) RageState.Enabled = value end })
+	section:Dropdown({ Name = "Target Priority", Options = { "Closest", "Lowest Health", "Closest To Crosshair" }, Default = "Closest", Callback = function(value) RageState.Priority = value end })
+	section:Dropdown({ Name = "Hitbox", Options = { "Head", "Torso", "Random" }, Default = "Head", Callback = function(value) RageState.Hitbox = value end })
+	section:Slider({ Name = "Range", Min = 10, Max = 2000, Default = RageState.Range, Suffix = " studs", Callback = function(value) RageState.Range = value end })
+	section:Toggle({ Name = "Team Check", Default = true, Callback = function(value) RageState.TeamCheck = value end })
+	section:Toggle({ Name = "Wall Check", Default = false, Callback = function(value) RageState.WallCheck = value end })
+	local fire = RageMain:Section({ Name = "Firing", Icon = Icon("silent", "bullet"), Side = 2 })
+	fire:Toggle({ Name = "Auto Fire", Default = true, Callback = function(value) RageState.AutoFire = value end })
+	fire:Slider({ Name = "Fire Delay", Min = 0, Max = 500, Default = RageState.FireDelay, Suffix = " ms", Callback = function(value) RageState.FireDelay = value end })
+	fire:Divider()
+	fire:Toggle({ Name = "Knife Mode", Default = false, Callback = function(value) RageState.KnifeMode = value end })
+	fire:Slider({ Name = "Knife Range", Min = 3, Max = 40, Default = RageState.KnifeRange, Suffix = " studs", Callback = function(value) RageState.KnifeRange = value end })
+
+	local function pickPart(character)
+		local mode = RageState.Hitbox
+		if mode == "Random" then mode = math.random() < 0.5 and "Head" or "Torso" end
+		if mode == "Torso" then
+			return character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso") or character:FindFirstChild("HumanoidRootPart")
+		end
+		return character:FindFirstChild("Head")
+	end
+
+	local function visible(camera, part, character)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { localPlayer.Character, character }
+		local origin = camera.CFrame.Position
+		return workspace:Raycast(origin, part.Position - origin, params) == nil
+	end
+
+	RunService.RenderStepped:Connect(function()
+		if not RageState.Enabled then return end
+		local camera = workspace.CurrentCamera
+		local myCharacter = localPlayer.Character
+		local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+		if not (camera and myRoot) then return end
+		local center = camera.ViewportSize / 2
+		local bestPart, bestScore, bestDistance
+		for _, player in ipairs(Players:GetPlayers()) do
+			local character = player ~= localPlayer and player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if humanoid and root and humanoid.Health > 0 and not (RageState.TeamCheck and player.Team ~= nil and player.Team == localPlayer.Team) then
+				local distance = (root.Position - myRoot.Position).Magnitude
+				local part = pickPart(character)
+				if part and distance <= RageState.Range and (not RageState.WallCheck or visible(camera, part, character)) then
+					local score = distance
+					if RageState.Priority == "Lowest Health" then
+						score = humanoid.Health
+					elseif RageState.Priority == "Closest To Crosshair" then
+						local point, onScreen = camera:WorldToViewportPoint(part.Position)
+						score = onScreen and (Vector2.new(point.X, point.Y) - center).Magnitude or math.huge
+					end
+					if not bestScore or score < bestScore then
+						bestPart, bestScore, bestDistance = part, score, distance
+					end
+				end
+			end
+		end
+		if not bestPart or bestScore == math.huge then return end
+		camera.CFrame = CFrame.new(camera.CFrame.Position, bestPart.Position)
+		if not RageState.AutoFire then return end
+		if RageState.KnifeMode and bestDistance > RageState.KnifeRange then return end
+		local now = os.clock()
+		if now - lastShot >= RageState.FireDelay / 1000 and mouse1click then
+			lastShot = now
+			Fire.Last = now
+			pcall(mouse1click)
+		end
+	end)
+end
+
+local TriggerState = { Enabled = false, Delay = 60, TeamCheck = true }
+do
+	local RunService = game:GetService("RunService")
+	local Players = game:GetService("Players")
+	local localPlayer = Players.LocalPlayer
+	local mouse = localPlayer:GetMouse()
+	local lastClick, seenAt = 0, nil
+
+	local section = LegitTrigger:Section({ Name = "Triggerbot", Icon = Icon("trigger", "bullet"), Side = 1 })
+	section:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.T, Callback = function(value) TriggerState.Enabled = value end })
+	section:Slider({ Name = "Delay", Min = 0, Max = 500, Default = TriggerState.Delay, Suffix = " ms", Callback = function(value) TriggerState.Delay = value end })
+	section:Toggle({ Name = "Team Check", Default = true, Callback = function(value) TriggerState.TeamCheck = value end })
+
+	local function playerUnder(part)
+		local model = part and part:FindFirstAncestorWhichIsA("Model")
+		while model and not model:FindFirstChildOfClass("Humanoid") do
+			model = model:FindFirstAncestorWhichIsA("Model")
+		end
+		return model and Players:GetPlayerFromCharacter(model), model
+	end
+
+	RunService.RenderStepped:Connect(function()
+		if not TriggerState.Enabled then seenAt = nil return end
+		local player, model = playerUnder(mouse.Target)
+		local humanoid = model and model:FindFirstChildOfClass("Humanoid")
+		if not player or player == localPlayer or not humanoid or humanoid.Health <= 0 then seenAt = nil return end
+		if TriggerState.TeamCheck and player.Team ~= nil and player.Team == localPlayer.Team then seenAt = nil return end
+		local now = os.clock()
+		seenAt = seenAt or now
+		if now - seenAt >= TriggerState.Delay / 1000 and now - lastClick > 0.08 and mouse1click then
+			lastClick = now
+			Fire.Last = now
+			pcall(mouse1click)
+		end
+	end)
+end
+
+do
+	local RunService = game:GetService("RunService")
+	local UserInputService = game:GetService("UserInputService")
+	local Players = game:GetService("Players")
+	local localPlayer = Players.LocalPlayer
+
+	local state = { Speed = false, SpeedValue = 50, InfiniteJump = false, NoClip = false }
+	local section = MovementMain:Section({ Name = "Character", Icon = Icon("speed", "smile"), Side = 1 })
+	section:Toggle({ Name = "Speed", Default = false, Callback = function(value) state.Speed = value end })
+	section:Slider({ Name = "Speed Amount", Min = 16, Max = 200, Default = state.SpeedValue, Callback = function(value) state.SpeedValue = value end })
+	section:Toggle({ Name = "Infinite Jump", Default = false, Callback = function(value) state.InfiniteJump = value end })
+	section:Toggle({ Name = "NoClip", Default = false, Keybind = Enum.KeyCode.N, Callback = function(value) state.NoClip = value end })
+
+	RunService.Heartbeat:Connect(function()
+		local character = localPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid and state.Speed then humanoid.WalkSpeed = state.SpeedValue end
+	end)
+	RunService.Stepped:Connect(function()
+		local character = localPlayer.Character
+		if not (character and state.NoClip) then return end
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then part.CanCollide = false end
+		end
+	end)
+	UserInputService.JumpRequest:Connect(function()
+		local character = localPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid and state.InfiniteJump then humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end)
+end
+
+do
+	local RunService = game:GetService("RunService")
+	local Players = game:GetService("Players")
+	local localPlayer = Players.LocalPlayer
+
+	local state = { Enabled = false, Material = "Neon", Color = Color3.fromRGB(230, 160, 255) }
+	local section = VisualsCosmetics:Section({ Name = "Character", Icon = Icon("character", "smile"), Side = 1 })
+	section:Toggle({ Name = "Character Material", Default = false, Color = state.Color, ColorCallback = function(color) state.Color = color end, Callback = function(value) state.Enabled = value end })
+	section:Dropdown({ Name = "Material", Options = { "Neon", "ForceField", "Glass", "SmoothPlastic" }, Default = "Neon", Callback = function(value) state.Material = value end })
+
+	local originals = setmetatable({}, { __mode = "k" })
+	local function restore()
+		for part, saved in pairs(originals) do
+			if part.Parent then
+				part.Material = saved.Material
+				part.Color = saved.Color
+			end
+			originals[part] = nil
+		end
+	end
+
+	RunService.RenderStepped:Connect(function()
+		local character = localPlayer.Character
+		if not (state.Enabled and character) then
+			if next(originals) then restore() end
+			return
+		end
+		local material = Enum.Material[state.Material]
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+				if not originals[part] then originals[part] = { Material = part.Material, Color = part.Color } end
+				part.Material = material
+				part.Color = state.Color
+			end
+		end
+	end)
+end
+
+do
+	local RunService = game:GetService("RunService")
+	local UserInputService = game:GetService("UserInputService")
+	local TweenService = game:GetService("TweenService")
+	local Debris = game:GetService("Debris")
+	local Players = game:GetService("Players")
+	local localPlayer = Players.LocalPlayer
+	local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+	local old = playerGui:FindFirstChild("ParanoiaHits")
+	if old then old:Destroy() end
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "ParanoiaHits"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 60
+	gui.Parent = playerGui
+
+	local list = Instance.new("Frame")
+	list.BackgroundTransparency = 1
+	list.AnchorPoint = Vector2.new(0.5, 0)
+	list.Position = UDim2.new(0.5, 0, 0, 70)
+	list.Size = UDim2.fromOffset(300, 200)
+	list.Parent = gui
+	local layout = Instance.new("UIListLayout")
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Padding = UDim.new(0, 4)
+	layout.Parent = list
+
+	local flash = Instance.new("Frame")
+	flash.Size = UDim2.fromScale(1, 1)
+	flash.BorderSizePixel = 0
+	flash.BackgroundTransparency = 1
+	flash.ZIndex = 0
+	flash.Parent = gui
+
+	local marker = Instance.new("Frame")
+	marker.AnchorPoint = Vector2.new(0.5, 0.5)
+	marker.Position = UDim2.fromScale(0.5, 0.5)
+	marker.Size = UDim2.fromOffset(20, 20)
+	marker.BackgroundTransparency = 1
+	marker.Parent = gui
+	local markerLines = {}
+	for _, angle in ipairs({ 45, -45 }) do
+		local line = Instance.new("Frame")
+		line.AnchorPoint = Vector2.new(0.5, 0.5)
+		line.Position = UDim2.fromScale(0.5, 0.5)
+		line.Size = UDim2.fromOffset(20, 2)
+		line.Rotation = angle
+		line.BorderSizePixel = 0
+		line.BackgroundTransparency = 1
+		line.Parent = marker
+		table.insert(markerLines, line)
+	end
+
+	local H = {
+		Notify = { Enabled = false, Duration = 2.5, Color = Color3.fromRGB(230, 160, 255) },
+		Marker = { Enabled = false, Color = Color3.fromRGB(255, 255, 255) },
+		Screen = { Enabled = false, Color = Color3.fromRGB(255, 70, 70), Intensity = 60, Duration = 0.35 },
+		Chams = { Enabled = false, Color = Color3.fromRGB(230, 160, 255), Neon = true, Duration = 0.8 },
+		Effect = { Enabled = false, Color = Color3.fromRGB(230, 160, 255), Kind = "Aura", Size = 10 },
+	}
+
+	local notify = VisualsHits:Section({ Name = "Hit Notify", Icon = Icon("preview", "smile"), Side = 1 })
+	notify:Toggle({ Name = "Hit Notify", Default = false, Color = H.Notify.Color, ColorCallback = function(color) H.Notify.Color = color end, Callback = function(value) H.Notify.Enabled = value end })
+	notify:Slider({ Name = "Notify Duration", Min = 0.5, Max = 6, Default = H.Notify.Duration, Decimals = 1, Suffix = "s", Callback = function(value) H.Notify.Duration = value end })
+	notify:Divider()
+	notify:Toggle({ Name = "Hit Marker", Default = false, Color = H.Marker.Color, ColorCallback = function(color) H.Marker.Color = color end, Callback = function(value) H.Marker.Enabled = value end })
+	notify:Divider()
+	notify:Toggle({ Name = "Hit Screen", Default = false, Color = H.Screen.Color, ColorCallback = function(color) H.Screen.Color = color end, Callback = function(value) H.Screen.Enabled = value end })
+	notify:Slider({ Name = "Screen Intensity", Min = 5, Max = 100, Default = H.Screen.Intensity, Suffix = "%", Callback = function(value) H.Screen.Intensity = value end })
+	notify:Slider({ Name = "Screen Duration", Min = 0.1, Max = 2, Default = H.Screen.Duration, Decimals = 2, Suffix = "s", Callback = function(value) H.Screen.Duration = value end })
+
+	local chams = VisualsHits:Section({ Name = "Hit Chams", Icon = Icon("effects", "globe"), Side = 2 })
+	chams:Toggle({ Name = "Hit Chams", Default = false, Color = H.Chams.Color, ColorCallback = function(color) H.Chams.Color = color end, Callback = function(value) H.Chams.Enabled = value end })
+	chams:Toggle({ Name = "Neon Glow", Default = true, Callback = function(value) H.Chams.Neon = value end })
+	chams:Slider({ Name = "Chams Duration", Min = 0.1, Max = 4, Default = H.Chams.Duration, Decimals = 1, Suffix = "s", Callback = function(value) H.Chams.Duration = value end })
+	chams:Divider()
+	chams:Toggle({ Name = "Hit Effect", Default = false, Color = H.Effect.Color, ColorCallback = function(color) H.Effect.Color = color end, Callback = function(value) H.Effect.Enabled = value end })
+	chams:Dropdown({ Name = "Effect", Options = { "Aura", "Bubble", "Ring", "Sparks" }, Default = "Aura", Callback = function(value) H.Effect.Kind = value end })
+	chams:Slider({ Name = "Effect Size", Min = 3, Max = 30, Default = H.Effect.Size, Callback = function(value) H.Effect.Size = value end })
+
+	local function toast(text)
+		local label = Instance.new("TextLabel")
+		label.AutomaticSize = Enum.AutomaticSize.X
+		label.Size = UDim2.fromOffset(0, 24)
+		label.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
+		label.BackgroundTransparency = 0.1
+		label.BorderSizePixel = 0
+		label.Font = Enum.Font.GothamMedium
+		label.TextSize = 13
+		label.TextColor3 = Color3.new(1, 1, 1)
+		label.Text = text
+		label.Parent = list
+		local padding = Instance.new("UIPadding")
+		padding.PaddingLeft = UDim.new(0, 10)
+		padding.PaddingRight = UDim.new(0, 10)
+		padding.Parent = label
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 5)
+		corner.Parent = label
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = H.Notify.Color
+		stroke.Thickness = 1.5
+		stroke.Parent = label
+		task.delay(H.Notify.Duration, function()
+			local info = TweenInfo.new(0.25)
+			TweenService:Create(label, info, { BackgroundTransparency = 1, TextTransparency = 1 }):Play()
+			TweenService:Create(stroke, info, { Transparency = 1 }):Play()
+			Debris:AddItem(label, 0.3)
+		end)
+	end
+
+	local function burst(position, kind, color, size)
+		local function part(shape, partSize, material, transparency)
+			local p = Instance.new("Part")
+			p.Anchored = true
+			p.CanCollide = false
+			p.CanQuery = false
+			p.CanTouch = false
+			p.CastShadow = false
+			p.Shape = shape
+			p.Size = partSize
+			p.Material = material
+			p.Color = color
+			p.Transparency = transparency
+			p.Position = position
+			p.Parent = workspace
+			Debris:AddItem(p, 2)
+			return p
+		end
+		if kind == "Aura" then
+			local p = part(Enum.PartType.Ball, Vector3.one * 2, Enum.Material.Neon, 0.35)
+			TweenService:Create(p, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.one * size, Transparency = 1 }):Play()
+		elseif kind == "Bubble" then
+			local p = part(Enum.PartType.Ball, Vector3.one * 1.5, Enum.Material.ForceField, 0.2)
+			TweenService:Create(p, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), { Size = Vector3.one * size * 0.8, Position = position + Vector3.new(0, size * 0.4, 0), Transparency = 1 }):Play()
+		elseif kind == "Ring" then
+			local p = part(Enum.PartType.Cylinder, Vector3.new(0.3, 2, 2), Enum.Material.Neon, 0.2)
+			p.CFrame = CFrame.new(position - Vector3.new(0, 2.5, 0)) * CFrame.Angles(0, 0, math.rad(90))
+			TweenService:Create(p, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.new(0.3, size * 1.6, size * 1.6), Transparency = 1 }):Play()
+		else
+			local p = part(Enum.PartType.Block, Vector3.one * 0.2, Enum.Material.SmoothPlastic, 1)
+			local emitter = Instance.new("ParticleEmitter")
+			emitter.Texture = "rbxasset://textures/particles/sparkles_main.dng"
+			emitter.Color = ColorSequence.new(color)
+			emitter.LightEmission = 1
+			emitter.Lifetime = NumberRange.new(0.4, 0.8)
+			emitter.Speed = NumberRange.new(10, 22)
+			emitter.SpreadAngle = Vector2.new(180, 180)
+			emitter.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.9), NumberSequenceKeypoint.new(1, 0) })
+			emitter.Rate = 0
+			emitter.Parent = p
+			emitter:Emit(30)
+		end
+	end
+
+	local function hitChams(character)
+		local info = TweenInfo.new(H.Chams.Duration)
+		local highlight = Instance.new("Highlight")
+		highlight.Adornee = character
+		highlight.FillColor = H.Chams.Color
+		highlight.OutlineColor = H.Chams.Color
+		highlight.FillTransparency = 0.3
+		highlight.OutlineTransparency = 0
+		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		highlight.Parent = gui
+		TweenService:Create(highlight, info, { FillTransparency = 1, OutlineTransparency = 1 }):Play()
+		Debris:AddItem(highlight, H.Chams.Duration + 0.1)
+		if H.Chams.Neon then
+			local saved = {}
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+					saved[part] = { part.Material, part.Color }
+					part.Material = Enum.Material.Neon
+					part.Color = H.Chams.Color
+				end
+			end
+			task.delay(H.Chams.Duration, function()
+				for part, original in pairs(saved) do
+					if part.Parent then
+						part.Material = original[1]
+						part.Color = original[2]
+					end
+				end
+			end)
+		end
+	end
+
+	local function registerHit(player, character, damage, killed)
+		local root = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+		if H.Notify.Enabled then
+			toast(killed and ("Killed " .. player.DisplayName) or string.format("Hit %s  -%d", player.DisplayName, math.floor(damage + 0.5)))
+		end
+		if H.Marker.Enabled then
+			for _, line in ipairs(markerLines) do
+				line.BackgroundColor3 = H.Marker.Color
+				line.BackgroundTransparency = 0
+				TweenService:Create(line, TweenInfo.new(0.3), { BackgroundTransparency = 1 }):Play()
+			end
+		end
+		if H.Screen.Enabled then
+			flash.BackgroundColor3 = H.Screen.Color
+			flash.BackgroundTransparency = 1 - H.Screen.Intensity / 100
+			TweenService:Create(flash, TweenInfo.new(H.Screen.Duration), { BackgroundTransparency = 1 }):Play()
+		end
+		if H.Chams.Enabled then hitChams(character) end
+		if H.Effect.Enabled and root then burst(root.Position, H.Effect.Kind, H.Effect.Color, H.Effect.Size) end
+	end
+
+	UserInputService.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			Fire.Held = true
+			Fire.Last = os.clock()
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			Fire.Held = false
+			Fire.Last = os.clock()
+		end
+	end)
+
+	local health = setmetatable({}, { __mode = "k" })
+	RunService.Heartbeat:Connect(function()
+		local camera = workspace.CurrentCamera
+		local armed = Fire.Held or os.clock() - Fire.Last < 0.4
+		for _, player in ipairs(Players:GetPlayers()) do
+			local character = player ~= localPlayer and player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				local previous = health[humanoid]
+				health[humanoid] = humanoid.Health
+				if previous and humanoid.Health < previous and armed and camera then
+					local head = character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+					if head then
+						local point, onScreen = camera:WorldToViewportPoint(head.Position)
+						local center = camera.ViewportSize / 2
+						if onScreen and (Vector2.new(point.X, point.Y) - center).Magnitude < 400 then
+							registerHit(player, character, previous - humanoid.Health, humanoid.Health <= 0)
+						end
+					end
+				end
+			end
+		end
+	end)
+end
+
+do
+	local RunService = game:GetService("RunService")
+	local Players = game:GetService("Players")
+	local localPlayer = Players.LocalPlayer
+	local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+	local UTILITIES = { "Flashbang", "Freeze Ray", "Grenade", "Jump Pad", "Molotov", "Satchel", "Smoke Grenade", "War Horn", "Medkit", "Subspace Tripmine", "Warpstone", "Grappler" }
+	local P = { Enabled = false, Color = Color3.fromRGB(230, 160, 255), Whitelist = {}, Impact = true, Speed = 70, Lift = 0.25, Radius = 12 }
+	for _, name in ipairs(UTILITIES) do P.Whitelist[name] = true end
+
+	local section = VisualsGrenades:Section({ Name = "Projectile", Icon = Icon("targeting", "bullet"), Side = 1 })
+	section:Toggle({ Name = "Grenade Projectory", Default = false, Color = P.Color, ColorCallback = function(color) P.Color = color end, Callback = function(value) P.Enabled = value end })
+	section:Dropdown({ Name = "Whitelisted Utilities", Options = UTILITIES, Default = UTILITIES, Multi = true, MaxRows = 12, Callback = function(value) P.Whitelist = value end })
+	section:Toggle({ Name = "Show Impact Circle", Default = true, Callback = function(value) P.Impact = value end })
+	section:Slider({ Name = "Impact Radius", Min = 2, Max = 40, Default = P.Radius, Suffix = " studs", Callback = function(value) P.Radius = value end })
+	section:Slider({ Name = "Throw Speed", Min = 20, Max = 200, Default = P.Speed, Callback = function(value) P.Speed = value end })
+	section:Slider({ Name = "Throw Lift", Min = 0, Max = 100, Default = P.Lift * 100, Suffix = "%", Callback = function(value) P.Lift = value / 100 end })
+
+	local old = playerGui:FindFirstChild("ParanoiaProjectile")
+	if old then old:Destroy() end
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "ParanoiaProjectile"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 45
+	gui.Parent = playerGui
+
+	local STEPS = 70
+	local dots = {}
+	for index = 1, STEPS do
+		local dot = Instance.new("Frame")
+		dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		dot.Size = UDim2.fromOffset(4, 4)
+		dot.BorderSizePixel = 0
+		dot.Visible = false
+		dot.Parent = gui
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(1, 0)
+		corner.Parent = dot
+		dots[index] = dot
+	end
+
+	local disc = Instance.new("Part")
+	disc.Name = "ParanoiaImpact"
+	disc.Anchored = true
+	disc.CanCollide = false
+	disc.CanQuery = false
+	disc.CanTouch = false
+	disc.CastShadow = false
+	disc.Shape = Enum.PartType.Cylinder
+	disc.Material = Enum.Material.Neon
+	disc.Transparency = 1
+	disc.Size = Vector3.new(0.15, 1, 1)
+	disc.Parent = workspace
+
+	local function equippedName()
+		local character = localPlayer.Character
+		local tool = character and character:FindFirstChildOfClass("Tool")
+		if tool then return tool.Name end
+		for _, key in ipairs({ "EquippedItem", "CurrentItem", "Equipped", "CurrentWeapon" }) do
+			local value = localPlayer:GetAttribute(key) or (character and character:GetAttribute(key))
+			if type(value) == "string" then return value end
+		end
+	end
+
+	local function allowed(name)
+		if not name then return false end
+		local lowered = string.lower(name)
+		for utility, enabled in pairs(P.Whitelist) do
+			if enabled and string.find(lowered, string.lower(utility), 1, true) then return true end
+		end
+		return false
+	end
+
+	local function hideAll()
+		for _, dot in ipairs(dots) do dot.Visible = false end
+		disc.Transparency = 1
+	end
+
+	RunService.RenderStepped:Connect(function()
+		local camera = workspace.CurrentCamera
+		if not (P.Enabled and camera and allowed(equippedName())) then return hideAll() end
+
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { localPlayer.Character, disc }
+		local look = camera.CFrame.LookVector
+		local velocity = (look + Vector3.new(0, P.Lift, 0)).Unit * P.Speed
+		local position = camera.CFrame.Position + look * 2
+		local gravity = Vector3.new(0, -workspace.Gravity, 0)
+		local step = 1 / 30
+		local impact, normal
+
+		for index = 1, STEPS do
+			local nextPosition = position + velocity * step + gravity * (0.5 * step * step)
+			velocity += gravity * step
+			local hit = workspace:Raycast(position, nextPosition - position, params)
+			local dot = dots[index]
+			local point, onScreen = camera:WorldToViewportPoint(hit and hit.Position or nextPosition)
+			dot.Visible = onScreen and point.Z > 0
+			dot.Position = UDim2.fromOffset(point.X, point.Y)
+			dot.BackgroundColor3 = P.Color
+			if hit then
+				impact, normal = hit.Position, hit.Normal
+				for rest = index + 1, STEPS do dots[rest].Visible = false end
+				break
+			end
+			position = nextPosition
+		end
+
+		if impact and P.Impact then
+			disc.Color = P.Color
+			disc.Transparency = 0.45
+			disc.Size = Vector3.new(0.15, P.Radius * 2, P.Radius * 2)
+			disc.CFrame = CFrame.lookAt(impact + normal * 0.1, impact + normal * 2) * CFrame.Angles(0, math.rad(90), 0)
+		else
+			disc.Transparency = 1
+		end
+	end)
+end
+
+EspWorld:Section({ Name = "World", Icon = Icon("world", "globe"), Side = 1 }):Label({ Name = "Nothing here yet" })
+EspCosmetics:Section({ Name = "Cosmetics", Icon = Icon("preview", "smile"), Side = 1 }):Label({ Name = "Nothing here yet" })
+RageAntiAim:Section({ Name = "Anti Aim", Icon = Icon("antiaim", "wrench"), Side = 1 }):Label({ Name = "Nothing here yet" })
+LegitSilent:Section({ Name = "Silent Aim", Icon = Icon("silent", "bullet"), Side = 1 }):Label({ Name = "Nothing here yet" })
+MiscCharacter:Section({ Name = "Character", Icon = Icon("character", "smile"), Side = 1 }):Label({ Name = "Nothing here yet" })
+MiscWeapons:Section({ Name = "Weapon Mods", Icon = Icon("weaponmods", "wrench"), Side = 1 }):Label({ Name = "Nothing here yet" })
+MiscAutomation:Section({ Name = "Automation", Icon = Icon("automation", "robot"), Side = 1 }):Label({ Name = "Nothing here yet" })
 
 Window:BuildSettings(Settings)
 finishNav()
