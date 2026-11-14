@@ -784,14 +784,13 @@ local function finishNav()
 end
 
 Category("Combat")
-local LegitSilent, LegitAim, LegitTrigger, MainTargeting, MiscWeapons, RageMain = Group({ Name = "Main", Icon = Icon("rage", "target") }, {
+local LegitSilent, LegitAim, LegitTrigger, RageMain = Group({ Name = "Main", Icon = Icon("rage", "target") }, {
 	{ Name = "Silent Aim", Icon = Icon("silent", "bullet") },
 	{ Name = "Aimbot", Icon = Icon("aimassist", "target") },
 	{ Name = "Triggerbot", Icon = Icon("trigger", "bullet") },
-	{ Name = "Targeting", Icon = Icon("targeting", "bullet") },
-	{ Name = "Weapons", Icon = Icon("weaponmods", "wrench") },
 	{ Name = "Ragebot", Icon = Icon("ragebot", "robot") },
 })
+local MainTargeting, MiscWeapons = LegitAim, RageMain
 Category("Visuals")
 local VisualsWorld = Tab({ Name = "World", Icon = Icon("world", "globe") })
 local VisualsLocal = VisualsWorld
@@ -800,14 +799,13 @@ local EspMain, EspWorld, EspCosmetics = Group({ Name = "ESP", Icon = Icon("esp",
 	{ Name = "World", Icon = Icon("world", "globe") },
 	{ Name = "Cosmetics", Icon = Icon("preview", "smile") },
 })
-local VisualsHits, VisualsHud, VisualsCosmetics, VisualsFx, VisualsCrosshair, VisualsGrenades = Group({ Name = "Visuals", Icon = Icon("effects", "globe") }, {
+local VisualsHits, VisualsHud, VisualsCosmetics, VisualsFx = Group({ Name = "Visuals", Icon = Icon("effects", "globe") }, {
 	{ Name = "Hit Effects", Icon = Icon("silent", "bullet") },
-	{ Name = "Target HUD", Icon = Icon("preview", "smile") },
+	{ Name = "HUD", Icon = Icon("preview", "smile") },
 	{ Name = "Viewmodel", Icon = Icon("character", "smile") },
 	{ Name = "Weapon FX", Icon = Icon("effects", "globe") },
-	{ Name = "Crosshair", Icon = Icon("local", "smile") },
-	{ Name = "Grenades", Icon = Icon("targeting", "bullet") },
 })
+local VisualsCrosshair, VisualsGrenades = VisualsHud, VisualsFx
 Category("Player")
 local MovementMain, RageAntiAim, MiscCharacter = Group({ Name = "Character", Icon = Icon("movement", "smile") }, {
 	{ Name = "Movement", Icon = Icon("speed", "smile") },
@@ -823,7 +821,7 @@ local MiscAutomation, MiscSpoof, MiscChat = Group({ Name = "Misc", Icon = Icon("
 local Settings = Tab({ Name = "Settings", Icon = Icon("settings", "gear") })
 
 local EspState = { Enabled = false, TeamCheck = false, LimitDistance = false, MaxDistance = 1000, Font = "Inter", Elements = {} }
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local WHITE = Color3.fromRGB(255, 255, 255)
 
@@ -1175,9 +1173,9 @@ do
 		end)
 	end
 	buildPreview(mainPreview)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local Players = game:GetService("Players")
 	local localPlayer = Players.LocalPlayer
@@ -1519,12 +1517,12 @@ do
 			end
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
 local Fire = { Last = 0, Held = false }
 local HitSignals = {}
 local PX = {}
-do
+xpcall(function()
 	local Players = game:GetService("Players")
 	local localPlayer = Players.LocalPlayer
 	PX.Players, PX.Local = Players, localPlayer
@@ -1596,11 +1594,11 @@ do
 
 	PX.BodyParts = { "Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot" }
 	PX.Materials = { "ForceField", "Neon", "Plastic", "SmoothPlastic", "Marble", "Slate", "Concrete", "Granite", "Brick", "Pebble", "Cobblestone", "Rock", "Sandstone", "Basalt", "CrackedLava", "Limestone", "Pavement", "Glass", "Metal", "DiamondPlate", "Foil", "Ice", "Fabric", "WoodPlanks", "Wood" }
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
 
 local Targeting = { VisibleOnly = false, IgnoreProtected = false, ProtectedIf = {}, DisableFlash = false, LimitDistance = false, MaxDistance = 250, ReactionTime = 0, ForgetTime = 1, Part = "Head", ClosestBlacklist = {} }
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local Lighting = game:GetService("Lighting")
 	local localPlayer = PX.Local
@@ -1729,7 +1727,7 @@ do
 		PX.Flashed = flashed
 	end)
 
-	local section = MainTargeting:Section({ Name = "Targeting", Icon = Icon("targeting", "bullet"), Side = 1 })
+	local section = MainTargeting:Section({ Name = "Targeting", Icon = Icon("targeting", "bullet"), Side = 2 })
 	section:Toggle({ Name = "Visible Only", Default = false, Callback = function(value) Targeting.VisibleOnly = value end })
 	section:Toggle({ Name = "Ignore Protected", Default = false, Callback = function(value) Targeting.IgnoreProtected = value end })
 	section:Dropdown({ Name = "Ignore If", Options = { "blocked by riot shield", "katana deflecting" }, Default = { "katana deflecting" }, Multi = true, Callback = function(value) Targeting.ProtectedIf = value end })
@@ -1742,9 +1740,9 @@ do
 	section:Dropdown({ Name = "Closest Part Blacklist", Options = PX.BodyParts, Default = { "LeftHand", "LeftLowerArm", "LeftUpperArm", "RightHand", "RightLowerArm", "RightUpperArm" }, Multi = true, MaxRows = 12, Callback = function(value) Targeting.ClosestBlacklist = value end })
 	for _, name in ipairs({ "LeftHand", "LeftLowerArm", "LeftUpperArm", "RightHand", "RightLowerArm", "RightUpperArm" }) do Targeting.ClosestBlacklist[name] = true end
 	Targeting.ProtectedIf["katana deflecting"] = true
-end
-local AimState = { Enabled = false, Fov = 120, DrawFov = true, FovColor = Color3.fromRGB(255, 255, 255), Smoothing = 0, TeamCheck = true, Closest = false, MatchAxis = false, FovPosition = {}, SmoothX = 100, SmoothY = 100, SmoothJump = 100, Fill = false, FillColor = Color3.fromRGB(255, 255, 255), FillTransparency = 0.85, Rotation = 0, Moving = false, RotationSpeed = 1, Outline = true, DelayPosition = false, Lerp = 1 }
-do
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
+local AimState = { Enabled = false, Fov = 120, DrawFov = false, FovColor = Color3.fromRGB(255, 255, 255), Smoothing = 0, TeamCheck = true, Closest = false, MatchAxis = false, FovPosition = {}, SmoothX = 100, SmoothY = 100, SmoothJump = 100, Fill = false, FillColor = Color3.fromRGB(255, 255, 255), FillTransparency = 0.85, Rotation = 0, Moving = false, RotationSpeed = 1, Outline = false, DelayPosition = false, Lerp = 1 }
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local Players = game:GetService("Players")
 	local localPlayer = Players.LocalPlayer
@@ -1783,8 +1781,8 @@ do
 	section:Slider({ Name = "X Smooth", Min = 1, Max = 100, Default = 100, Suffix = "%", Callback = function(value) AimState.SmoothX = value end })
 	section:Slider({ Name = "Y Smooth", Min = 1, Max = 100, Default = 100, Suffix = "%", Callback = function(value) AimState.SmoothY = value end })
 	section:Slider({ Name = "Jump Smoothing", Min = 1, Max = 100, Default = 100, Suffix = "%", Callback = function(value) AimState.SmoothJump = value end })
-	section:Toggle({ Name = "Show FOV", Default = true, Color = AimState.FovColor, ColorCallback = function(color) AimState.FovColor = color end, Callback = function(value) AimState.DrawFov = value end })
-	section:Toggle({ Name = "FOV Outline", Default = true, Callback = function(value) AimState.Outline = value end })
+	section:Toggle({ Name = "Show FOV", Default = false, Color = AimState.FovColor, ColorCallback = function(color) AimState.FovColor = color end, Callback = function(value) AimState.DrawFov = value end })
+	section:Toggle({ Name = "FOV Outline", Default = false, Callback = function(value) AimState.Outline = value end })
 	section:Toggle({ Name = "FOV Fill", Default = false, Color = AimState.FillColor, ColorCallback = function(color) AimState.FillColor = color end, Callback = function(value) AimState.Fill = value end })
 	section:Slider({ Name = "FOV Lerp", Min = 0.01, Max = 1, Default = 1, Decimals = 2, Suffix = "x", Callback = function(value) AimState.Lerp = value end })
 	section:Toggle({ Name = "Moving Rotation", Default = false, Callback = function(value) AimState.Moving = value end })
@@ -1859,9 +1857,9 @@ do
 			camera.CFrame = camera.CFrame:Lerp(goal, alpha)
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local Lighting = game:GetService("Lighting")
 	local Players = game:GetService("Players")
@@ -1896,11 +1894,11 @@ do
 			end
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
 local RageState = { Enabled = false, Priority = "Closest", Hitbox = "Head", TeamCheck = true, WallCheck = false, Range = math.huge, AutoFire = true, FireDelay = 80, KnifeMode = false, KnifeRange = 14 }
-local VoidState = { Enabled = true, Hide = 0.25, Attack = 0.1, Attempts = 1, Mode = "gun", Weapon = "primary", SwapEmpty = false, Priority = false, Notify = true, Settings = { attackers = true }, Attackers = {}, Cheaters = {} }
-do
+local VoidState = { Enabled = false, Hide = 0.25, Attack = 0.1, Attempts = 1, Mode = "gun", Weapon = "primary", SwapEmpty = false, Priority = false, Notify = true, Settings = { attackers = true }, Attackers = {}, Cheaters = {} }
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local Players = game:GetService("Players")
 	local localPlayer = Players.LocalPlayer
@@ -1908,7 +1906,7 @@ do
 
 	local section = RageMain:Section({ Name = "Ragebot", Icon = Icon("ragebot", "robot"), Side = 1 })
 	section:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.C, Callback = function(value) RageState.Enabled = value end })
-	section:Toggle({ Name = "Void Spam", Default = true, Callback = function(value) VoidState.Enabled = value end })
+	section:Toggle({ Name = "Void Spam", Default = false, Callback = function(value) VoidState.Enabled = value end })
 	section:Slider({ Name = "Hide", Min = 0.01, Max = 1, Default = 0.25, Decimals = 2, Suffix = "s", Callback = function(value) VoidState.Hide = value end })
 	section:Slider({ Name = "Attack", Min = 0.01, Max = 1, Default = 0.1, Decimals = 2, Suffix = "s", Callback = function(value) VoidState.Attack = value end })
 	section:Slider({ Name = "Shoot Attempts", Min = 1, Max = 2, Default = 1, Suffix = "x", Callback = function(value) VoidState.Attempts = value end })
@@ -2134,10 +2132,10 @@ do
 			if now - phaseStart >= VoidState.Attack then phase, phaseStart = "hide", now end
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
 local TriggerState = { Enabled = false, Delay = 100, TeamCheck = true, Offset = 0, Forget = 0.5, ShootDelay = 0, MaxDistance = 100, Blacklist = {}, NoDelayBetween = false, AntiKatana = true, Scoped = { Sniper = true, Crossbow = true } }
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local UserInputService = game:GetService("UserInputService")
 	local Players = game:GetService("Players")
@@ -2217,9 +2215,9 @@ do
 			pcall(mouse1click)
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local UserInputService = game:GetService("UserInputService")
 	local Players = game:GetService("Players")
@@ -2249,9 +2247,9 @@ do
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if humanoid and state.InfiniteJump then humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local Players = game:GetService("Players")
 	local localPlayer = Players.LocalPlayer
@@ -2287,9 +2285,9 @@ do
 			end
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local UserInputService = game:GetService("UserInputService")
 	local TweenService = game:GetService("TweenService")
@@ -2537,9 +2535,9 @@ do
 			end
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local Players = game:GetService("Players")
 	local localPlayer = Players.LocalPlayer
@@ -2658,13 +2656,13 @@ do
 			disc.Transparency = 1
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
 EspWorld:Section({ Name = "World", Icon = Icon("world", "globe"), Side = 1 }):Label({ Name = "Nothing here yet" })
 EspCosmetics:Section({ Name = "Cosmetics", Icon = Icon("preview", "smile"), Side = 1 }):Label({ Name = "Nothing here yet" })
 
-local SilentState = { Enabled = false, Radius = 100, HitChance = 100, Closest = false, Manipulation = false, Visualize = true, ShowFov = false, Color = Color3.fromRGB(255, 255, 255), Fill = false, Outline = false, Part = nil, Roll = true, Moving = false, Rotation = 0, RotationSpeed = 1, Lerp = 1, FillColor = Color3.fromRGB(255, 255, 255), TeamCheck = true, FovPosition = {} }
-do
+local SilentState = { Enabled = false, Radius = 100, HitChance = 100, Closest = false, Manipulation = false, Visualize = false, ShowFov = false, Color = Color3.fromRGB(255, 255, 255), Fill = false, Outline = false, Part = nil, Roll = true, Moving = false, Rotation = 0, RotationSpeed = 1, Lerp = 1, FillColor = Color3.fromRGB(255, 255, 255), TeamCheck = true, FovPosition = {} }
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local localPlayer = PX.Local
 	local mouse = localPlayer:GetMouse()
@@ -2693,7 +2691,7 @@ do
 	end })
 	section:Toggle({ Name = "Manipulation", Default = false, Callback = function(value) SilentState.Manipulation = value end })
 	section:Toggle({ Name = "Closest Part", Default = false, Callback = function(value) SilentState.Closest = value end })
-	section:Toggle({ Name = "Visualize", Default = true, Callback = function(value) SilentState.Visualize = value end })
+	section:Toggle({ Name = "Visualize", Default = false, Callback = function(value) SilentState.Visualize = value end })
 	section:Toggle({ Name = "Show FOV", Default = false, Color = SilentState.Color, ColorCallback = function(color) SilentState.Color = color end, Callback = function(value) SilentState.ShowFov = value end })
 	section:Toggle({ Name = "FOV Outline", Default = false, Callback = function(value) SilentState.Outline = value end })
 	section:Toggle({ Name = "FOV Fill", Default = false, Color = SilentState.FillColor, ColorCallback = function(color) SilentState.FillColor = color end, Callback = function(value) SilentState.Fill = value end })
@@ -2822,10 +2820,10 @@ do
 		section:Label({ Name = "Executor lacks hookmetamethod" })
 	end
 	SilentState.Install = installHooks
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
 local AntiAim = { Enabled = false, Pitch = "disabled", PitchAngle = 0, Yaw = "disabled", YawAngle = 0, Underground = false }
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local localPlayer = PX.Local
 	local section = RageAntiAim:Section({ Name = "Anti Aim", Icon = Icon("antiaim", "wrench"), Side = 1 })
@@ -2885,12 +2883,12 @@ do
 			root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, angle, 0)
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
 local WeaponMods = { NoSpread = false, FullAuto = false, Firerate = 100, Backstab = false, Grenade = {} }
-do
+xpcall(function()
 	local ReplicatedStorage = game:GetService("ReplicatedStorage")
-	local section = MiscWeapons:Section({ Name = "Weapon Mods", Icon = Icon("weaponmods", "wrench"), Side = 1 })
+	local section = MiscWeapons:Section({ Name = "Weapon Mods", Icon = Icon("weaponmods", "wrench"), Side = 2 })
 	local originals = {}
 	local SPREAD = { "spread", "shotspread", "bulletspread", "inaccuracy", "recoil", "recoilx", "recoily", "shake" }
 	local RATE = { "shootcooldown", "firecooldown", "cooldown", "firedelay", "firerate", "rpm", "shotdelay" }
@@ -3026,10 +3024,10 @@ do
 			end
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
 local Automation = { Chat = { Enabled = false, Order = false, Texts = { "Paranoia on top" }, Index = 1 }, Respawn = false, Drops = false, SpoofDevice = false, Device = "computer", NameLocal = false, NameValue = "Paranoia", NameOthers = false, NameOtherValue = "Paranoia", HitNotify = false, HitDuration = 1, HitText = "Hit {NAME} for {DMG}" }
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local TextChatService = game:GetService("TextChatService")
 	local UserInputService = game:GetService("UserInputService")
@@ -3162,9 +3160,9 @@ do
 		text = string.gsub(text, "{PART}", "body")
 		Window:Notify({ Title = "Hit", Text = text, Duration = Automation.HitDuration })
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local Lighting = game:GetService("Lighting")
 	local localPlayer = PX.Local
@@ -3262,9 +3260,9 @@ do
 	effects:Slider({ Name = "Haze", Min = 0, Max = 10, Default = 10, Decimals = 1, Callback = function(value) atmosphere.Haze = value end })
 	effects:Slider({ Name = "Atmosphere Offset", Min = 0, Max = 1, Default = 0.4, Decimals = 2, Callback = function(value) atmosphere.Offset = value end })
 	effects:Slider({ Name = "Density", Min = 0, Max = 1, Default = 0.5, Decimals = 2, Callback = function(value) atmosphere.Density = value end })
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local UserInputService = game:GetService("UserInputService")
 	local TweenService = game:GetService("TweenService")
@@ -3272,7 +3270,7 @@ do
 	local localPlayer = PX.Local
 	local gui = PX.gui("ParanoiaCrosshair", 43)
 
-	local C = { Enabled = false, Outline = true, Rotation = 0, Speed = 0.2, Bounce = 0, BounceSpeed = 1, Offset = 5, Length = 20, Thickness = 2, Color = Color3.fromRGB(255, 255, 255), DisableGame = false, Position = false }
+	local C = { Enabled = false, Outline = false, Rotation = 0, Speed = 0.2, Bounce = 0, BounceSpeed = 1, Offset = 5, Length = 20, Thickness = 2, Color = Color3.fromRGB(255, 255, 255), DisableGame = false, Position = false }
 	local holder = Instance.new("Frame")
 	holder.AnchorPoint = Vector2.new(0.5, 0.5)
 	holder.BackgroundTransparency = 1
@@ -3293,7 +3291,7 @@ do
 
 	local section = VisualsCrosshair:Section({ Name = "Crosshair", Icon = Icon("local", "smile"), Side = 1 })
 	section:Toggle({ Name = "Custom Crosshair", Default = false, Color = C.Color, ColorCallback = function(color) C.Color = color end, Callback = function(value) C.Enabled = value end })
-	section:Toggle({ Name = "Crosshair Outline", Default = true, Callback = function(value) C.Outline = value end })
+	section:Toggle({ Name = "Crosshair Outline", Default = false, Callback = function(value) C.Outline = value end })
 	section:Slider({ Name = "Crosshair Rotation", Min = 0, Max = 360, Default = 0, Suffix = "deg", Callback = function(value) C.Rotation = value end })
 	section:Slider({ Name = "Spin Speed", Min = 0, Max = 5, Default = 0.2, Decimals = 1, Suffix = "rps", Callback = function(value) C.Speed = value end })
 	section:Slider({ Name = "Bounce", Min = 0, Max = 300, Default = 0, Suffix = "px", Callback = function(value) C.Bounce = value end })
@@ -3380,9 +3378,9 @@ do
 			if beam.Parent then TweenService:Create(beam, TweenInfo.new(tracer.Fade), { Transparency = 1 }):Play() end
 		end)
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local SoundService = game:GetService("SoundService")
 	local HitSounds = { Enabled = false, Volume = 0.5, Selected = "neverlose" }
 	local IDS = {
@@ -3409,9 +3407,9 @@ do
 	end
 	section:Button({ Name = "Preview Sound", Callback = play })
 	table.insert(HitSignals, function() if HitSounds.Enabled then play() end end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local UserInputService = game:GetService("UserInputService")
 	local localPlayer = PX.Local
@@ -3483,9 +3481,9 @@ do
 			localPlayer.CameraMaxZoomDistance = 128
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local localPlayer = PX.Local
 	local section = MiscCharacter:Section({ Name = "Animation Player", Icon = Icon("character", "smile"), Side = 1 })
@@ -3542,19 +3540,18 @@ do
 			if track.TimePosition < startTime or track.TimePosition > endTime then track.TimePosition = startTime end
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local Lighting = game:GetService("Lighting")
 	local SoundService = game:GetService("SoundService")
-	local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 	local skyboxSection = VisualsWorld:Section({ Name = "Skybox", Icon = Icon("world", "globe"), Side = 2 })
 	local S = { Enabled = false, Selected = "custom", Custom = "", NoSun = false, NoStars = false }
 	local skies = { "custom" }
 	local skyByName = {}
-	for _, container in ipairs({ Lighting, ReplicatedStorage }) do
+	for _, container in ipairs({ Lighting }) do
 		for _, object in ipairs(container:GetDescendants()) do
 			if object:IsA("Sky") and not skyByName[object.Name] then
 				skyByName[object.Name] = object
@@ -3657,9 +3654,9 @@ do
 		if A.Enabled and text ~= "" then sound:Play() end
 	end })
 	ambienceSection:Slider({ Name = "Ambience Volume", Min = 0.1, Max = 10, Default = 0.5, Decimals = 1, Suffix = "db", Callback = function(value) sound.Volume = value end })
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local UserInputService = game:GetService("UserInputService")
 	local localPlayer = PX.Local
@@ -3736,11 +3733,11 @@ do
 	end)
 
 	-- indicators
-	local I = { Manipulated = true, Ragebot = true, RageStyle = { text = true, status = true }, Ammo = false, AmmoStyle = { ammo = true }, Lerp = 1, X = 0, Y = 25, Font = "Inter", Case = "lower", OnTarget = false,
+	local I = { Manipulated = false, Ragebot = false, RageStyle = { text = true, status = true }, Ammo = false, AmmoStyle = { ammo = true }, Lerp = 1, X = 0, Y = 25, Font = "Inter", Case = "lower", OnTarget = false,
 		ManipColor = Color3.fromRGB(255, 255, 255), RageText = Color3.fromRGB(255, 255, 255), RageStatus = Color3.fromRGB(255, 255, 255), AmmoColor = Color3.fromRGB(255, 255, 255), AmmoDivider = Color3.fromRGB(255, 255, 255), AmmoMax = Color3.fromRGB(255, 255, 255), ReserveColor = Color3.fromRGB(255, 255, 255), EmptyColor = Color3.fromRGB(255, 255, 255) }
 	local ind = VisualsHud:Section({ Name = "Indicators", Icon = Icon("preview", "smile"), Side = 2 })
-	ind:Toggle({ Name = "Manipulated", Default = true, Color = I.ManipColor, ColorCallback = function(color) I.ManipColor = color end, Callback = function(value) I.Manipulated = value end })
-	ind:Toggle({ Name = "Ragebot Indicator", Default = true, Color = I.RageText, ColorCallback = function(color) I.RageText = color end, Callback = function(value) I.Ragebot = value end })
+	ind:Toggle({ Name = "Manipulated", Default = false, Color = I.ManipColor, ColorCallback = function(color) I.ManipColor = color end, Callback = function(value) I.Manipulated = value end })
+	ind:Toggle({ Name = "Ragebot Indicator", Default = false, Color = I.RageText, ColorCallback = function(color) I.RageText = color end, Callback = function(value) I.Ragebot = value end })
 	ind:Colorpicker({ Name = "Ragebot Status Color", Default = I.RageStatus, Callback = function(color) I.RageStatus = color end })
 	ind:Dropdown({ Name = "Ragebot Style", Options = { "text", "status" }, Default = { "text", "status" }, Multi = true, Callback = function(value) I.RageStyle = value end })
 	ind:Toggle({ Name = "Ammo", Default = false, Color = I.AmmoColor, ColorCallback = function(color) I.AmmoColor = color end, Callback = function(value) I.Ammo = value end })
@@ -3872,9 +3869,9 @@ do
 			line.Visible = false
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local UserInputService = game:GetService("UserInputService")
 	local SoundService = game:GetService("SoundService")
 	local RunService = game:GetService("RunService")
@@ -3930,9 +3927,9 @@ do
 			end
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local TweenService = game:GetService("TweenService")
 	local Debris = game:GetService("Debris")
@@ -4012,9 +4009,9 @@ do
 			end
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local localPlayer = PX.Local
 
@@ -4062,9 +4059,9 @@ do
 			end
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local RunService = game:GetService("RunService")
 	local UserInputService = game:GetService("UserInputService")
 	local localPlayer = PX.Local
@@ -4108,9 +4105,9 @@ do
 			end
 		end
 	end)
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
-do
+xpcall(function()
 	local L = { Enabled = false, Silent = false }
 	local section = MiscAutomation:Section({ Name = "Auto Load", Icon = Icon("autoload", "robot"), Side = 1 })
 	section:Toggle({ Name = "Enabled", Default = false, Callback = function(value)
@@ -4124,7 +4121,155 @@ do
 	if getgenv and getgenv().ParanoiaSilent then
 		task.defer(function() pcall(function() Window:SetVisible(false) end) end)
 	end
-end
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
+
+xpcall(function()
+	local RunService = game:GetService("RunService")
+	local localPlayer = PX.Local
+
+	local function guiRoot() return localPlayer:FindFirstChild("PlayerGui") end
+	local function shown(object)
+		local node = object
+		while node and not node:IsA("PlayerGui") do
+			if node:IsA("GuiObject") and not node.Visible then return false end
+			if node:IsA("ScreenGui") and not node.Enabled then return false end
+			node = node.Parent
+		end
+		return true
+	end
+	local function textOf(object)
+		return string.lower((object:IsA("TextButton") or object:IsA("TextLabel")) and object.Text or object.Name)
+	end
+	local function press(button)
+		pcall(function()
+			if getconnections then
+				for _, signal in ipairs({ button.MouseButton1Click, button.Activated, button.MouseButton1Down }) do
+					for _, connection in ipairs(getconnections(signal)) do pcall(function() connection:Fire() end) end
+				end
+			elseif firesignal then
+				firesignal(button.MouseButton1Click)
+				firesignal(button.Activated)
+			end
+		end)
+	end
+	local function buttons(filter)
+		local list = {}
+		local gui = guiRoot()
+		if not gui then return list end
+		for _, object in ipairs(gui:GetDescendants()) do
+			if (object:IsA("TextButton") or object:IsA("ImageButton")) and shown(object) and filter(object) then table.insert(list, object) end
+		end
+		return list
+	end
+	local function labelWith(...)
+		local gui = guiRoot()
+		local needles = { ... }
+		if not gui then return nil end
+		for _, object in ipairs(gui:GetDescendants()) do
+			if object:IsA("TextLabel") and shown(object) then
+				local text = string.lower(object.Text)
+				for _, needle in ipairs(needles) do
+					if string.find(text, needle, 1, true) then return object end
+				end
+			end
+		end
+	end
+
+	local WEAPONS = { "Assault Rifle", "Bow", "Burst Rifle", "Crossbow", "Distortion", "Energy Rifle", "Flamethrower", "Grenade Launcher", "Gunblade", "Minigun", "Paintball Gun", "RPG", "Shotgun", "Sniper", "Uzi", "Revolver", "Exogun", "Handgun", "Daggers", "Katana", "Knife", "Scythe", "Fists", "Riot Shield", "Chainsaw", "Trowel", "Maul", "Battle Axe", "Medkit", "Flare Gun", "Slingshot", "Spray" }
+
+	local Q = { Queue = false, Mode = "1v1", Ban = false, BanDelay = 0, BanWeapons = false, First = "Riot Shield", Second = "Katana", FirstDelay = 0, SecondDelay = 0, Select = false, Primary = "Assault Rifle", Secondary = "Handgun", Melee = "Knife" }
+	local queue = MiscAutomation:Section({ Name = "Auto Queue", Icon = Icon("automation", "robot"), Side = 2 })
+	queue:Toggle({ Name = "Enabled", Default = false, Callback = function(value) Q.Queue = value end })
+	queue:Dropdown({ Name = "Game Mode", Options = { "1v1", "2v2", "3v3", "4v4", "5v5" }, Default = "1v1", Callback = function(value) Q.Mode = value end })
+	local ban = MiscAutomation:Section({ Name = "Auto Ban", Icon = Icon("automation", "robot"), Side = 2 })
+	ban:Toggle({ Name = "Ban Random Map", Default = false, Callback = function(value) Q.Ban = value end })
+	ban:Slider({ Name = "Map Ban Delay", Min = 0, Max = 5, Default = 0, Decimals = 1, Suffix = "s", Callback = function(value) Q.BanDelay = value end })
+	ban:Toggle({ Name = "Ban Weapons", Default = false, Callback = function(value) Q.BanWeapons = value end })
+	ban:Slider({ Name = "First Ban Delay", Min = 0, Max = 5, Default = 0, Decimals = 1, Suffix = "s", Callback = function(value) Q.FirstDelay = value end })
+	ban:Slider({ Name = "Second Ban Delay", Min = 0, Max = 5, Default = 0, Decimals = 1, Suffix = "s", Callback = function(value) Q.SecondDelay = value end })
+	ban:Dropdown({ Name = "First Ban", Options = WEAPONS, Default = "Riot Shield", MaxRows = 10, Callback = function(value) Q.First = value end })
+	ban:Dropdown({ Name = "Second Ban", Options = WEAPONS, Default = "Katana", MaxRows = 10, Callback = function(value) Q.Second = value end })
+	local loadout = MiscAutomation:Section({ Name = "Loadout", Icon = Icon("automation", "robot"), Side = 1 })
+	loadout:Toggle({ Name = "Auto Select", Default = false, Callback = function(value) Q.Select = value end })
+	loadout:Dropdown({ Name = "Primary", Options = WEAPONS, Default = "Assault Rifle", MaxRows = 10, Callback = function(value) Q.Primary = value end })
+	loadout:Dropdown({ Name = "Secondary", Options = WEAPONS, Default = "Handgun", MaxRows = 10, Callback = function(value) Q.Secondary = value end })
+	loadout:Dropdown({ Name = "Melee", Options = WEAPONS, Default = "Knife", MaxRows = 10, Callback = function(value) Q.Melee = value end })
+
+	local lastQueue, banSeen, banned = 0, {}, {}
+	RunService.Heartbeat:Connect(function()
+		if not (Q.Queue or Q.Ban or Q.BanWeapons or Q.Select) then return end
+		local now = os.clock()
+		if now - lastQueue < 1.5 then return end
+		lastQueue = now
+		if Q.Queue and not labelWith("searching", "in queue") then
+			local modes = buttons(function(button) return string.find(textOf(button), string.lower(Q.Mode), 1, true) ~= nil end)
+			if modes[1] then press(modes[1]) end
+			local go = buttons(function(button)
+				local text = textOf(button)
+				return string.find(text, "queue", 1, true) or text == "play" or string.find(text, "find match", 1, true)
+			end)
+			if go[1] then press(go[1]) end
+		end
+		if Q.Ban then
+			local title = labelWith("ban a map", "ban map", "map ban")
+			if title then
+				banSeen.map = banSeen.map or now
+				if now - banSeen.map >= Q.BanDelay and not banned.map then
+					local options = buttons(function(button) return button:IsDescendantOf(title.Parent) and button ~= title end)
+					if #options > 0 then banned.map = true press(options[math.random(1, #options)]) end
+				end
+			else
+				banSeen.map, banned.map = nil, nil
+			end
+		end
+		if Q.BanWeapons then
+			local title = labelWith("ban a weapon", "ban weapon", "weapon ban")
+			if title then
+				banSeen.weapon = banSeen.weapon or now
+				local elapsed = now - banSeen.weapon
+				for index, pick in ipairs({ Q.First, Q.Second }) do
+					local key = "weapon" .. index
+					local delay = index == 1 and Q.FirstDelay or Q.FirstDelay + Q.SecondDelay
+					if elapsed >= delay and not banned[key] then
+						local matches = buttons(function(button) return string.find(textOf(button), string.lower(pick), 1, true) ~= nil end)
+						if matches[1] then banned[key] = true press(matches[1]) end
+					end
+				end
+			else
+				banSeen.weapon, banned.weapon1, banned.weapon2 = nil, nil, nil
+			end
+		end
+		if Q.Select then
+			for _, pick in ipairs({ Q.Primary, Q.Secondary, Q.Melee }) do
+				local matches = buttons(function(button) return string.lower(textOf(button)) == string.lower(pick) end)
+				if matches[1] then press(matches[1]) end
+			end
+		end
+	end)
+
+	local F = { Override = false, Fps = 60 }
+	local anim = VisualsCosmetics:Section({ Name = "Viewmodel Rate", Icon = Icon("weaponmods", "wrench"), Side = 1 })
+	anim:Toggle({ Name = "Override FPS", Default = false, Callback = function(value) F.Override = value end })
+	anim:Slider({ Name = "FPS", Min = 1, Max = 60, Default = 60, Suffix = "x", Callback = function(value) F.Fps = value end })
+	local frame = 0
+	RunService.Heartbeat:Connect(function()
+		if not F.Override then return end
+		frame += 1
+		local step = math.max(1, math.round(60 / math.max(F.Fps, 1)))
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+		for _, model in ipairs(camera:GetChildren()) do
+			if model:IsA("Model") and not model:FindFirstChildOfClass("Humanoid") then
+				local animator = model:FindFirstChildWhichIsA("Animator", true)
+				if animator then
+					for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+						track:AdjustSpeed(frame % step == 0 and 1 or 0)
+					end
+				end
+			end
+		end
+	end)
+end, function(err) warn("[Paranoia] feature failed: " .. tostring(err)) end)
 
 Window:BuildSettings(Settings)
 finishNav()
