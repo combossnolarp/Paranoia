@@ -119,6 +119,98 @@ if not Blossom then
 		local]]
 		src = replace(src, "local alphaBar = new%(\"Frame\", { Bg = \"Background\", Position = Offset%(pad %+ 1, alphaY %+ 1%)", checkerboardCode .. " alphaBar = new(\"Frame\", { Bg = \"Background\", Position = Offset(pad + 1, alphaY + 1)")
 
+		src = replacePlain(src,
+			"\tbutton.MouseButton1Click:Connect(function()\n\t\tobject.Listening = true\n\t\twin.Listening = object\n\t\tobject.Refresh()\n\tend)\n\tbutton.MouseButton2Click:Connect(function() win:OpenKeybindMenu(chip, object) end)",
+			"\tfunction object.StartListening()\n\t\tobject.Listening = true\n\t\twin.Listening = object\n\t\tobject.Refresh()\n\tend\n\tbutton.MouseButton1Click:Connect(function() win:OpenKeybindMenu(chip, object) end)\n\tbutton.MouseButton2Click:Connect(function() win:OpenKeybindMenu(chip, object) end)")
+
+		src = replacePlain(src,
+			"\t\t\tif toggle.Keybind.Mode == \"Hold\" then toggle:Set(true) else toggle:Set(not toggle.Value) end\n\t\tend\n\t\ttoggle.Keybind.OnRelease = function()\n\t\t\tif toggle.Keybind.Mode == \"Hold\" then toggle:Set(false) end\n\t\tend",
+			"\t\t\tlocal mode = toggle.Keybind.Mode\n\t\t\tif mode == \"Always\" then return end\n\t\t\tif mode == \"Hold\" then toggle:Set(true) else toggle:Set(not toggle.Value) end\n\t\tend\n\t\ttoggle.Keybind.OnRelease = function()\n\t\t\tif toggle.Keybind.Mode == \"Hold\" then toggle:Set(false) end\n\t\tend\n\t\ttoggle.Keybind.OnModeChanged = function(mode, previous)\n\t\t\tif mode == \"Always\" then toggle:Set(true) elseif previous == \"Always\" then toggle:Set(false) end\n\t\tend\n\t\ttoggle.Keybind.GetState = function() return toggle.Value end")
+
+		do
+			local menuStart = string.find(src, "function Window:_buildKeybindMenu()", 1, true)
+			local menuEnd = string.find(src, "function Window:_buildPicker()", 1, true)
+			if menuStart and menuEnd then
+				local menuSource = [==[function Window:_buildKeybindMenu()
+	local pad, gap, rowH = Metrics.Pad, Metrics.Gap, Metrics.InputH
+	local width = 226
+	local inner = width - pad * 2
+	local third = (inner - gap * 2) / 3
+	local MODES = { "Toggle", "Hold", "Always" }
+	local frame, body, controls = self:_popupFrame(width, pad * 2 + rowH * 4 + gap * 3)
+	local menu = { Frame = frame, Fader = newFader(frame), Target = nil }
+	local function modeX(index) return pad + (index - 1) * (third + gap) end
+	local pill = new("Frame", { Bg = "Accent", Size = Offset(third - 2, rowH - 2), Position = Offset(modeX(1) + 1, pad + 1), Radius = Metrics.Radius, Border = "Outline" }, body)
+	addGradient(pill)
+	for index, mode in ipairs(MODES) do
+		local hit = new("TextButton", { Position = Offset(modeX(index), pad), Size = Offset(third, rowH), ZIndex = 2 }, body)
+		centeredLabel(hit, third, { Text = mode, RowH = rowH })
+		table.insert(controls, hit)
+		hit.MouseButton1Click:Connect(function() menu.SetMode(mode) end)
+	end
+	local function actionRow(text)
+		local row = new("TextButton", { Position = Offset(pad + 1, 0), Size = Offset(inner - 2, rowH - 2), Radius = Metrics.Radius, Border = "Outline", BackgroundTransparency = 0 }, body)
+		interactive(row, "Element")
+		addGradient(row)
+		table.insert(controls, row)
+		local rowLabel = centeredLabel(row, inner - 2, { Text = text, RowH = rowH - 2 })
+		return row, rowLabel
+	end
+	local bindRow = actionRow("Bind Key")
+	local mobileRow, mobileLabel = actionRow("Spawn Mobile Button")
+	local reset = actionRow("Reset")
+
+	function menu.Paint(animated)
+		local target = menu.Target
+		if not target then return end
+		local showMobile = target.Mode ~= "Always"
+		local y = pad + rowH + gap
+		bindRow.Position = Offset(pad + 1, y + 1)
+		y += rowH + gap
+		mobileRow.Visible = showMobile
+		if showMobile then
+			setText(mobileLabel, target.MobileButton and "Remove Mobile Button" or "Spawn Mobile Button")
+			mobileRow.Position = Offset(pad + 1, y + 1)
+			y += rowH + gap
+		end
+		reset.Position = Offset(pad + 1, y + 1)
+		frame.Size = Offset(width, y + rowH + pad)
+		local index = table.find(MODES, target.Mode) or 1
+		place(pill, "Position", Offset(modeX(index) + 1, pad + 1), animated, "Knob")
+	end
+
+	function menu.SetMode(mode)
+		local target = menu.Target
+		if not target or target.Mode == mode then return end
+		local previous = target.Mode
+		target.Mode = mode
+		if target.OnModeChanged then target.OnModeChanged(mode, previous) end
+		if self.OnKeybindMode then self.OnKeybindMode(target, mode, previous) end
+		menu.Paint(true)
+	end
+
+	bindRow.MouseButton1Click:Connect(function()
+		local target = menu.Target
+		self:ClosePopup()
+		if target then target.StartListening() end
+	end)
+	mobileRow.MouseButton1Click:Connect(function()
+		local target = menu.Target
+		if target and self.OnMobileButton then self.OnMobileButton(target) end
+		menu.Paint(false)
+	end)
+	reset.MouseButton1Click:Connect(function()
+		if menu.Target then menu.Target:Set(nil) end
+		self:ClosePopup()
+	end)
+	self.KeybindMenu = menu
+end
+
+]==]
+				src = string.sub(src, 1, menuStart - 1) .. menuSource .. string.sub(src, menuEnd)
+			end
+		end
+
 		Blossom = loadstring(src)()
 	end
 end
@@ -652,7 +744,11 @@ local LegitAim, LegitRecoil, LegitTrigger = Group({ Name = "Legit", Icon = Icon(
 	{ Name = "Triggerbot", Icon = Icon("trigger", "bullet") },
 })
 Category("Visuals")
-local EspTab = Tab({ Name = "ESP", Icon = Icon("esp", "smile") })
+local EspInfo, EspWorld, EspCosmetics = Group({ Name = "ESP", Icon = Icon("esp", "smile") }, {
+	{ Name = "Info", Icon = Icon("esp", "smile") },
+	{ Name = "World", Icon = Icon("world", "globe") },
+	{ Name = "Cosmetics", Icon = Icon("preview", "smile") },
+})
 local EffectsLocal, EffectsWorld = Group({ Name = "Effects", Icon = Icon("effects", "globe") }, {
 	{ Name = "Local", Icon = Icon("local", "smile") },
 	{ Name = "World", Icon = Icon("world", "globe") },
@@ -736,25 +832,25 @@ Trigger:Toggle({ Name = "Magnet Trigger", Default = false })
 Trigger:Slider({ Name = "Magnet FOV", Min = 0, Max = 100, Default = 25 })
 Trigger:Toggle({ Name = "Head Only", Default = true })
 
-local EspState = { Enabled = false, LimitDistance = false, MaxDistance = 1000, Font = "Inter", Elements = {} }
+local EspState = { Enabled = false, TeamCheck = false, LimitDistance = false, MaxDistance = 1000, Font = "Inter", Elements = {} }
 do
 	local RunService = game:GetService("RunService")
 	local WHITE = Color3.fromRGB(255, 255, 255)
 
 	local ELEMENTS = {
-		{ Key = "Box", Name = "Box", Gradient = true, Rotation = 0,
+		{ Key = "Box", Section = "Cosmetics", Name = "Box", Gradient = true, Rotation = 0,
 			Colors = { WHITE, Color3.fromRGB(230, 160, 255), Color3.fromRGB(120, 90, 255) } },
-		{ Key = "BoxFill", Name = "Box Fill", Gradient = true, Rotation = 90,
+		{ Key = "BoxFill", Section = "Cosmetics", Name = "Box Fill", Gradient = true, Rotation = 90,
 			Colors = { Color3.fromRGB(230, 160, 255), Color3.fromRGB(150, 110, 255), Color3.fromRGB(60, 40, 140) } },
-		{ Key = "Skeleton", Name = "Skeleton", Color = WHITE },
-		{ Key = "HealthBar", Name = "Health Bar", Gradient = true, Rotation = 90,
+		{ Key = "Skeleton", Section = "Cosmetics", Name = "Skeleton", Color = WHITE },
+		{ Key = "HealthBar", Section = "Info", Name = "Health Bar", Gradient = true, Rotation = 90,
 			Colors = { Color3.fromRGB(90, 255, 120), Color3.fromRGB(255, 220, 80), Color3.fromRGB(255, 70, 70) } },
-		{ Key = "AmmoBar", Name = "Ammo Bar", Gradient = true, Rotation = 0,
+		{ Key = "AmmoBar", Section = "Info", Name = "Ammo Bar", Gradient = true, Rotation = 0,
 			Colors = { Color3.fromRGB(255, 220, 110), Color3.fromRGB(255, 170, 60), Color3.fromRGB(255, 110, 40) } },
-		{ Key = "HeadDot", Name = "Head Dot", Color = Color3.fromRGB(230, 160, 255) },
-		{ Key = "Name", Name = "Name", Color = WHITE },
-		{ Key = "Rank", Name = "Rank", Color = Color3.fromRGB(255, 215, 120) },
-		{ Key = "Weapon", Name = "Weapon", Color = Color3.fromRGB(205, 205, 205) },
+		{ Key = "HeadDot", Section = "Cosmetics", Name = "Head Dot", Color = Color3.fromRGB(230, 160, 255) },
+		{ Key = "Name", Section = "Info", Name = "Name", Color = WHITE },
+		{ Key = "Rank", Section = "Info", Name = "Rank", Color = Color3.fromRGB(255, 215, 120) },
+		{ Key = "Weapon", Section = "Info", Name = "Weapon", Color = Color3.fromRGB(205, 205, 205) },
 	}
 
 	local function setShown(object, shown)
@@ -765,13 +861,30 @@ do
 		item.Section:Layout(true)
 	end
 
-	local espSection = EspTab:Section({ Name = "ESP", Icon = Icon("esp", "smile"), Side = 1 })
-	local previewSection = EspTab:Section({ Name = "Preview", Icon = Icon("preview", "smile"), Side = 2 })
+	local infoSection = EspInfo:Section({ Name = "Info", Icon = Icon("esp", "smile"), Side = 1 })
+	local infoPreview = EspInfo:Section({ Name = "Preview", Icon = Icon("preview", "smile"), Side = 2 })
+	local worldSection = EspWorld:Section({ Name = "World", Icon = Icon("world", "globe"), Side = 1 })
+	local cosmeticsSection = EspCosmetics:Section({ Name = "Cosmetics", Icon = Icon("preview", "smile"), Side = 1 })
+	local cosmeticsPreview = EspCosmetics:Section({ Name = "Preview", Icon = Icon("preview", "smile"), Side = 2 })
 
-	espSection:Toggle({ Name = "Enabled", Default = false, Callback = function(value) EspState.Enabled = value end })
-	espSection:Divider()
+	worldSection:Toggle({ Name = "Enabled", Default = false, Callback = function(value) EspState.Enabled = value end })
+	worldSection:Toggle({ Name = "Team Check", Default = false, Callback = function(value) EspState.TeamCheck = value end })
+	worldSection:Divider()
+	local maxDistance
+	worldSection:Toggle({ Name = "Limit Distance", Default = false, Callback = function(value)
+		EspState.LimitDistance = value
+		setShown(maxDistance, value)
+	end })
+	maxDistance = worldSection:Slider({ Name = "Max Distance", Min = 1, Max = 100000, Default = EspState.MaxDistance, Suffix = " studs", Callback = function(value) EspState.MaxDistance = value end })
+	setShown(maxDistance, EspState.LimitDistance)
+
+	local previewFonts = {}
+	local function applyPreviewFont()
+		for _, apply in ipairs(previewFonts) do apply() end
+	end
 
 	for _, def in ipairs(ELEMENTS) do
+		local espSection = def.Section == "Info" and infoSection or cosmeticsSection
 		local element = {
 			Enabled = false, Color = def.Color, Colors = def.Colors and table.clone(def.Colors),
 			Animate = false, Rotation = def.Rotation or 0, Speed = 1, Gradient = def.Gradient,
@@ -824,203 +937,301 @@ do
 		refresh()
 	end
 
-	espSection:Divider()
-	local maxDistance
-	espSection:Toggle({ Name = "Limit Distance", Default = false, Callback = function(value)
-		EspState.LimitDistance = value
-		setShown(maxDistance, value)
-	end })
-	maxDistance = espSection:Slider({ Name = "Max Distance", Min = 1, Max = 100000, Default = EspState.MaxDistance, Suffix = " studs", Callback = function(value) EspState.MaxDistance = value end })
-	setShown(maxDistance, EspState.LimitDistance)
-
-	local applyPreviewFont
-	espSection:Dropdown({ Name = "ESP Font", Options = FontList, Default = "Inter", MaxRows = 12, Callback = function(value)
+	infoSection:Divider()
+	infoSection:Dropdown({ Name = "ESP Font", Options = FontList, Default = "Inter", MaxRows = 12, Callback = function(value)
 		EspState.Font = value
-		if applyPreviewFont then applyPreviewFont() end
+		applyPreviewFont()
 	end })
 
-	local PREVIEW_H = 360
-	local item = previewSection:_item(PREVIEW_H, "Preview", nil, false)
-	local stage = Instance.new("Frame")
-	stage.Name = "EspPreview"
-	stage.Size = UDim2.fromScale(1, 1)
-	stage.BackgroundColor3 = Color3.new(0, 0, 0)
-	stage.BackgroundTransparency = 0.55
-	stage.BorderSizePixel = 0
-	stage.ClipsDescendants = true
-	stage.Parent = item.Frame
-	local stageCorner = Instance.new("UICorner")
-	stageCorner.CornerRadius = UDim.new(0, 4)
-	stageCorner.Parent = stage
+	local function buildPreview(previewSection)
+		local PREVIEW_H = 360
+		local item = previewSection:_item(PREVIEW_H, "Preview", nil, false)
+		local stage = Instance.new("Frame")
+		stage.Name = "EspPreview"
+		stage.Size = UDim2.fromScale(1, 1)
+		stage.BackgroundColor3 = Color3.new(0, 0, 0)
+		stage.BackgroundTransparency = 0.55
+		stage.BorderSizePixel = 0
+		stage.ClipsDescendants = true
+		stage.Parent = item.Frame
+		local stageCorner = Instance.new("UICorner")
+		stageCorner.CornerRadius = UDim.new(0, 4)
+		stageCorner.Parent = stage
 
-	local CHAR_H = PREVIEW_H - 96
-	local CHAR_W = math.floor(CHAR_H * 377 / 658)
-	local body = Instance.new("Frame")
-	body.Name = "Body"
-	body.BackgroundTransparency = 1
-	body.AnchorPoint = Vector2.new(0.5, 0.5)
-	body.Position = UDim2.new(0.5, 0, 0.5, 2)
-	body.Size = UDim2.fromOffset(CHAR_W, CHAR_H)
-	body.Parent = stage
+		local CHAR_H = PREVIEW_H - 96
+		local CHAR_W = math.floor(CHAR_H * 377 / 658)
+		local body = Instance.new("Frame")
+		body.Name = "Body"
+		body.BackgroundTransparency = 1
+		body.AnchorPoint = Vector2.new(0.5, 0.5)
+		body.Position = UDim2.new(0.5, 0, 0.5, 2)
+		body.Size = UDim2.fromOffset(CHAR_W, CHAR_H)
+		body.Parent = stage
 
-	local character = Instance.new("ImageLabel")
-	character.Name = "Character"
-	character.BackgroundTransparency = 1
-	character.Size = UDim2.fromScale(1, 1)
-	character.ScaleType = Enum.ScaleType.Fit
-	character.Image = Assets["esp/preview.png"] or ""
-	character.ZIndex = 2
-	character.Parent = body
+		local character = Instance.new("ImageLabel")
+		character.Name = "Character"
+		character.BackgroundTransparency = 1
+		character.Size = UDim2.fromScale(1, 1)
+		character.ScaleType = Enum.ScaleType.Fit
+		character.Image = Assets["esp/preview.png"] or ""
+		character.ZIndex = 2
+		character.Parent = body
 
-	local function frame(name, parent, zindex)
-		local f = Instance.new("Frame")
-		f.Name = name
-		f.BorderSizePixel = 0
-		f.BackgroundTransparency = 1
-		f.ZIndex = zindex or 3
-		f.Parent = parent
-		return f
-	end
-
-	local function gradient(parent)
-		local g = Instance.new("UIGradient")
-		g.Parent = parent
-		return g
-	end
-
-	local PAD = 5
-	local boxFill = frame("BoxFill", body, 1)
-	boxFill.Position = UDim2.fromOffset(-PAD, -PAD)
-	boxFill.Size = UDim2.new(1, PAD * 2, 1, PAD * 2)
-	boxFill.BackgroundColor3 = WHITE
-	boxFill.BackgroundTransparency = 0.72
-	local fillGradient = gradient(boxFill)
-
-	local box = frame("Box", body, 4)
-	box.Position = boxFill.Position
-	box.Size = boxFill.Size
-	local boxOutline = Instance.new("UIStroke")
-	boxOutline.Thickness = 3
-	boxOutline.Color = Color3.new(0, 0, 0)
-	boxOutline.Transparency = 0.2
-	boxOutline.Parent = box
-	local boxInner = frame("Inner", box, 5)
-	boxInner.Size = UDim2.fromScale(1, 1)
-	local boxStroke = Instance.new("UIStroke")
-	boxStroke.Thickness = 1
-	boxStroke.Color = WHITE
-	boxStroke.Parent = boxInner
-	local boxGradient = gradient(boxStroke)
-
-	local healthBack = frame("HealthBar", body, 4)
-	healthBack.BackgroundColor3 = Color3.new(0, 0, 0)
-	healthBack.BackgroundTransparency = 0.25
-	healthBack.Position = UDim2.fromOffset(-PAD - 7, -PAD - 1)
-	healthBack.Size = UDim2.new(0, 4, 1, PAD * 2 + 2)
-	local healthFill = frame("Fill", healthBack, 5)
-	healthFill.BackgroundColor3 = WHITE
-	healthFill.BackgroundTransparency = 0
-	healthFill.AnchorPoint = Vector2.new(0, 1)
-	healthFill.Position = UDim2.new(0, 1, 1, -1)
-	local healthGradient = gradient(healthFill)
-
-	local ammoBack = frame("AmmoBar", body, 4)
-	ammoBack.BackgroundColor3 = Color3.new(0, 0, 0)
-	ammoBack.BackgroundTransparency = 0.25
-	ammoBack.Position = UDim2.new(0, -PAD - 1, 1, PAD + 3)
-	ammoBack.Size = UDim2.new(1, PAD * 2 + 2, 0, 4)
-	local ammoFill = frame("Fill", ammoBack, 5)
-	ammoFill.BackgroundColor3 = WHITE
-	ammoFill.BackgroundTransparency = 0
-	ammoFill.Position = UDim2.fromOffset(1, 1)
-	local ammoGradient = gradient(ammoFill)
-
-	local JOINTS = {
-		Head = Vector2.new(0.49, 0.19), Neck = Vector2.new(0.50, 0.33),
-		LeftShoulder = Vector2.new(0.29, 0.40), RightShoulder = Vector2.new(0.75, 0.39),
-		LeftElbow = Vector2.new(0.32, 0.61), LeftHand = Vector2.new(0.43, 0.36),
-		RightElbow = Vector2.new(0.76, 0.63), RightHand = Vector2.new(0.63, 0.89),
-		Pelvis = Vector2.new(0.50, 0.72), LeftHip = Vector2.new(0.37, 0.73), RightHip = Vector2.new(0.65, 0.73),
-		LeftKnee = Vector2.new(0.39, 0.99), RightKnee = Vector2.new(0.61, 0.99),
-	}
-	local BONES = {
-		{ "Head", "Neck" }, { "Neck", "Pelvis" },
-		{ "Neck", "LeftShoulder" }, { "LeftShoulder", "LeftElbow" }, { "LeftElbow", "LeftHand" },
-		{ "Neck", "RightShoulder" }, { "RightShoulder", "RightElbow" }, { "RightElbow", "RightHand" },
-		{ "Pelvis", "LeftHip" }, { "LeftHip", "LeftKnee" }, { "Pelvis", "RightHip" }, { "RightHip", "RightKnee" },
-	}
-	local skeleton = frame("Skeleton", body, 6)
-	skeleton.Size = UDim2.fromScale(1, 1)
-	local boneFrames = {}
-	for _, bone in ipairs(BONES) do
-		local line = frame("Bone", skeleton, 6)
-		line.AnchorPoint = Vector2.new(0.5, 0.5)
-		line.BackgroundTransparency = 0
-		local outline = Instance.new("UIStroke")
-		outline.Thickness = 1
-		outline.Color = Color3.new(0, 0, 0)
-		outline.Transparency = 0.45
-		outline.Parent = line
-		table.insert(boneFrames, { Line = line, From = JOINTS[bone[1]], To = JOINTS[bone[2]] })
-	end
-	local function layoutSkeleton()
-		local size = body.AbsoluteSize
-		for _, bone in ipairs(boneFrames) do
-			local a = bone.From * size
-			local b = bone.To * size
-			local delta = b - a
-			bone.Line.Position = UDim2.fromOffset((a.X + b.X) / 2, (a.Y + b.Y) / 2)
-			bone.Line.Size = UDim2.fromOffset(delta.Magnitude, 1.5)
-			bone.Line.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+		local function frame(name, parent, zindex)
+			local f = Instance.new("Frame")
+			f.Name = name
+			f.BorderSizePixel = 0
+			f.BackgroundTransparency = 1
+			f.ZIndex = zindex or 3
+			f.Parent = parent
+			return f
 		end
-	end
-	body:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutSkeleton)
-	layoutSkeleton()
 
-	local headDot = frame("HeadDot", body, 7)
-	headDot.AnchorPoint = Vector2.new(0.5, 0.5)
-	headDot.Position = UDim2.fromScale(JOINTS.Head.X, JOINTS.Head.Y)
-	headDot.Size = UDim2.fromOffset(7, 7)
-	headDot.BackgroundTransparency = 0
-	local headCorner = Instance.new("UICorner")
-	headCorner.CornerRadius = UDim.new(1, 0)
-	headCorner.Parent = headDot
-	local headStroke = Instance.new("UIStroke")
-	headStroke.Thickness = 1
-	headStroke.Color = Color3.new(0, 0, 0)
-	headStroke.Parent = headDot
-
-	local function text(name, content, position, anchor)
-		local label = Instance.new("TextLabel")
-		label.Name = name
-		label.BackgroundTransparency = 1
-		label.AnchorPoint = anchor
-		label.Position = position
-		label.Size = UDim2.fromOffset(160, 14)
-		label.Text = content
-		label.TextSize = 12
-		label.TextStrokeTransparency = 0.35
-		label.TextColor3 = WHITE
-		label.ZIndex = 8
-		label.Parent = body
-		return label
-	end
-	local nameLabel = text("Name", "Paranoia", UDim2.new(0.5, 0, 0, -PAD - 3), Vector2.new(0.5, 1))
-	local rankLabel = text("Rank", "Diamond II", UDim2.new(0.5, 0, 0, -PAD - 17), Vector2.new(0.5, 1))
-	rankLabel.TextSize = 11
-	local weaponLabel = text("Weapon", "Assault Rifle", UDim2.new(0.5, 0, 1, PAD + 10), Vector2.new(0.5, 0))
-	weaponLabel.TextSize = 11
-
-	local textLabels = { nameLabel, rankLabel, weaponLabel }
-	applyPreviewFont = function()
-		local face = fontFace(EspState.Font, Enum.FontWeight.Bold)
-		for _, label in ipairs(textLabels) do
-			if face then label.FontFace = face end
+		local function gradient(parent)
+			local g = Instance.new("UIGradient")
+			g.Parent = parent
+			return g
 		end
-	end
-	applyPreviewFont()
 
-	local function sequence(colors)
+		local PAD = 5
+		local boxFill = frame("BoxFill", body, 1)
+		boxFill.Position = UDim2.fromOffset(-PAD, -PAD)
+		boxFill.Size = UDim2.new(1, PAD * 2, 1, PAD * 2)
+		boxFill.BackgroundColor3 = WHITE
+		boxFill.BackgroundTransparency = 0.72
+		local fillGradient = gradient(boxFill)
+
+		local box = frame("Box", body, 4)
+		box.Position = boxFill.Position
+		box.Size = boxFill.Size
+		local boxOutline = Instance.new("UIStroke")
+		boxOutline.Thickness = 3
+		boxOutline.Color = Color3.new(0, 0, 0)
+		boxOutline.Transparency = 0.2
+		boxOutline.Parent = box
+		local boxInner = frame("Inner", box, 5)
+		boxInner.Size = UDim2.fromScale(1, 1)
+		local boxStroke = Instance.new("UIStroke")
+		boxStroke.Thickness = 1
+		boxStroke.Color = WHITE
+		boxStroke.Parent = boxInner
+		local boxGradient = gradient(boxStroke)
+
+		local healthBack = frame("HealthBar", body, 4)
+		healthBack.BackgroundColor3 = Color3.new(0, 0, 0)
+		healthBack.BackgroundTransparency = 0.25
+		healthBack.Position = UDim2.fromOffset(-PAD - 7, -PAD - 1)
+		healthBack.Size = UDim2.new(0, 4, 1, PAD * 2 + 2)
+		local healthFill = frame("Fill", healthBack, 5)
+		healthFill.BackgroundColor3 = WHITE
+		healthFill.BackgroundTransparency = 0
+		healthFill.AnchorPoint = Vector2.new(0, 1)
+		healthFill.Position = UDim2.new(0, 1, 1, -1)
+		local healthGradient = gradient(healthFill)
+
+		local ammoBack = frame("AmmoBar", body, 4)
+		ammoBack.BackgroundColor3 = Color3.new(0, 0, 0)
+		ammoBack.BackgroundTransparency = 0.25
+		ammoBack.Position = UDim2.new(0, -PAD - 1, 1, PAD + 3)
+		ammoBack.Size = UDim2.new(1, PAD * 2 + 2, 0, 4)
+		local ammoFill = frame("Fill", ammoBack, 5)
+		ammoFill.BackgroundColor3 = WHITE
+		ammoFill.BackgroundTransparency = 0
+		ammoFill.Position = UDim2.fromOffset(1, 1)
+		local ammoGradient = gradient(ammoFill)
+
+		local JOINTS = {
+			Head = Vector2.new(0.49, 0.19), Neck = Vector2.new(0.50, 0.33),
+			LeftShoulder = Vector2.new(0.29, 0.40), RightShoulder = Vector2.new(0.75, 0.39),
+			LeftElbow = Vector2.new(0.32, 0.61), LeftHand = Vector2.new(0.43, 0.36),
+			RightElbow = Vector2.new(0.76, 0.63), RightHand = Vector2.new(0.63, 0.89),
+			Pelvis = Vector2.new(0.50, 0.72), LeftHip = Vector2.new(0.37, 0.73), RightHip = Vector2.new(0.65, 0.73),
+			LeftKnee = Vector2.new(0.39, 0.99), RightKnee = Vector2.new(0.61, 0.99),
+		}
+		local BONES = {
+			{ "Head", "Neck" }, { "Neck", "Pelvis" },
+			{ "Neck", "LeftShoulder" }, { "LeftShoulder", "LeftElbow" }, { "LeftElbow", "LeftHand" },
+			{ "Neck", "RightShoulder" }, { "RightShoulder", "RightElbow" }, { "RightElbow", "RightHand" },
+			{ "Pelvis", "LeftHip" }, { "LeftHip", "LeftKnee" }, { "Pelvis", "RightHip" }, { "RightHip", "RightKnee" },
+		}
+		local skeleton = frame("Skeleton", body, 6)
+		skeleton.Size = UDim2.fromScale(1, 1)
+		local boneFrames = {}
+		for _, bone in ipairs(BONES) do
+			local line = frame("Bone", skeleton, 6)
+			line.AnchorPoint = Vector2.new(0.5, 0.5)
+			line.BackgroundTransparency = 0
+			local outline = Instance.new("UIStroke")
+			outline.Thickness = 1
+			outline.Color = Color3.new(0, 0, 0)
+			outline.Transparency = 0.45
+			outline.Parent = line
+			table.insert(boneFrames, { Line = line, From = JOINTS[bone[1]], To = JOINTS[bone[2]] })
+		end
+		local function layoutSkeleton()
+			local size = body.AbsoluteSize
+			for _, bone in ipairs(boneFrames) do
+				local a = bone.From * size
+				local b = bone.To * size
+				local delta = b - a
+				bone.Line.Position = UDim2.fromOffset((a.X + b.X) / 2, (a.Y + b.Y) / 2)
+				bone.Line.Size = UDim2.fromOffset(delta.Magnitude, 1.5)
+				bone.Line.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+			end
+		end
+		body:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutSkeleton)
+		layoutSkeleton()
+
+		local headDot = frame("HeadDot", body, 7)
+		headDot.AnchorPoint = Vector2.new(0.5, 0.5)
+		headDot.Position = UDim2.fromScale(JOINTS.Head.X, JOINTS.Head.Y)
+		headDot.Size = UDim2.fromOffset(7, 7)
+		headDot.BackgroundTransparency = 0
+		local headCorner = Instance.new("UICorner")
+		headCorner.CornerRadius = UDim.new(1, 0)
+		headCorner.Parent = headDot
+		local headStroke = Instance.new("UIStroke")
+		headStroke.Thickness = 1
+		headStroke.Color = Color3.new(0, 0, 0)
+		headStroke.Parent = headDot
+
+		local function text(name, content, position, anchor)
+			local label = Instance.new("TextLabel")
+			label.Name = name
+			label.BackgroundTransparency = 1
+			label.AnchorPoint = anchor
+			label.Position = position
+			label.Size = UDim2.fromOffset(160, 14)
+			label.Text = content
+			label.TextSize = 12
+			label.TextStrokeTransparency = 0.35
+			label.TextColor3 = WHITE
+			label.ZIndex = 8
+			label.Parent = body
+			return label
+		end
+		local nameLabel = text("Name", "Paranoia", UDim2.new(0.5, 0, 0, -PAD - 3), Vector2.new(0.5, 1))
+		local rankLabel = text("Rank", "Diamond II", UDim2.new(0.5, 0, 0, -PAD - 17), Vector2.new(0.5, 1))
+		rankLabel.TextSize = 11
+		local weaponLabel = text("Weapon", "Assault Rifle", UDim2.new(0.5, 0, 1, PAD + 10), Vector2.new(0.5, 0))
+		weaponLabel.TextSize = 11
+
+		local textLabels = { nameLabel, rankLabel, weaponLabel }
+		local function applyThisFont()
+			local face = fontFace(EspState.Font, Enum.FontWeight.Bold)
+			for _, label in ipairs(textLabels) do
+				if face then label.FontFace = face end
+			end
+		end
+		table.insert(previewFonts, applyThisFont)
+		applyThisFont()
+
+		local function sequence(colors)
+			return ColorSequence.new({
+				ColorSequenceKeypoint.new(0, colors[1]),
+				ColorSequenceKeypoint.new(0.5, colors[2]),
+				ColorSequenceKeypoint.new(1, colors[3]),
+			})
+		end
+
+		local clock = 0
+		local function paintGradient(g, element)
+			g.Color = sequence(element.Colors)
+			local rotation = element.Rotation
+			if element.Animate then rotation += clock * element.Speed * 360 end
+			g.Rotation = rotation % 360
+		end
+
+		local E = EspState.Elements
+		RunService.RenderStepped:Connect(function(dt)
+			if not (Window.Visible and stage.AbsoluteSize.X > 0 and stage.Parent and item.Frame.Visible) then return end
+			clock += dt
+
+			boxFill.Visible = E.BoxFill.Enabled
+			if E.BoxFill.Enabled then paintGradient(fillGradient, E.BoxFill) end
+
+			box.Visible = E.Box.Enabled
+			if E.Box.Enabled then paintGradient(boxGradient, E.Box) end
+
+			healthBack.Visible = E.HealthBar.Enabled
+			if E.HealthBar.Enabled then
+				local health = 0.62 + 0.33 * math.sin(clock * 0.7)
+				healthFill.Size = UDim2.new(1, -2, health, -2)
+				paintGradient(healthGradient, E.HealthBar)
+			end
+
+			ammoBack.Visible = E.AmmoBar.Enabled
+			if E.AmmoBar.Enabled then
+				local ammo = 1 - (math.floor(clock * 5) % 34) / 30
+				ammo = math.clamp(ammo, 0, 1)
+				ammoFill.Size = UDim2.new(ammo, -2, 1, -2)
+				paintGradient(ammoGradient, E.AmmoBar)
+			end
+
+			skeleton.Visible = E.Skeleton.Enabled
+			if E.Skeleton.Enabled then
+				for _, bone in ipairs(boneFrames) do bone.Line.BackgroundColor3 = E.Skeleton.Color end
+			end
+
+			headDot.Visible = E.HeadDot.Enabled
+			headDot.BackgroundColor3 = E.HeadDot.Color
+
+			nameLabel.Visible = E.Name.Enabled
+			nameLabel.TextColor3 = E.Name.Color
+			rankLabel.Visible = E.Rank.Enabled
+			rankLabel.TextColor3 = E.Rank.Color
+			weaponLabel.Visible = E.Weapon.Enabled
+			weaponLabel.TextColor3 = E.Weapon.Color
+			weaponLabel.Position = E.AmmoBar.Enabled and UDim2.new(0.5, 0, 1, PAD + 10) or UDim2.new(0.5, 0, 1, PAD + 2)
+			local topOffset = E.Name.Enabled and -PAD - 17 or -PAD - 3
+			rankLabel.Position = UDim2.new(0.5, 0, 0, topOffset)
+		end)
+	end
+	buildPreview(infoPreview)
+	buildPreview(cosmeticsPreview)
+end
+
+do
+	local RunService = game:GetService("RunService")
+	local Players = game:GetService("Players")
+	local localPlayer = Players.LocalPlayer
+	local playerGui = localPlayer:WaitForChild("PlayerGui")
+	local WHITE, BLACK = Color3.new(1, 1, 1), Color3.new(0, 0, 0)
+
+	local old = playerGui:FindFirstChild("ParanoiaESP")
+	if old then old:Destroy() end
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "ParanoiaESP"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 50
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	gui.Parent = playerGui
+
+	local function make(class, props, parent)
+		local object = Instance.new(class)
+		for key, value in pairs(props) do object[key] = value end
+		object.Parent = parent
+		return object
+	end
+
+	local function box(name, parent, zindex)
+		return make("Frame", { Name = name, BorderSizePixel = 0, BackgroundTransparency = 1, ZIndex = zindex }, parent)
+	end
+
+	local R15_BONES = {
+		{ "Head", "UpperTorso" }, { "UpperTorso", "LowerTorso" },
+		{ "UpperTorso", "LeftUpperArm" }, { "LeftUpperArm", "LeftLowerArm" }, { "LeftLowerArm", "LeftHand" },
+		{ "UpperTorso", "RightUpperArm" }, { "RightUpperArm", "RightLowerArm" }, { "RightLowerArm", "RightHand" },
+		{ "LowerTorso", "LeftUpperLeg" }, { "LeftUpperLeg", "LeftLowerLeg" }, { "LeftLowerLeg", "LeftFoot" },
+		{ "LowerTorso", "RightUpperLeg" }, { "RightUpperLeg", "RightLowerLeg" }, { "RightLowerLeg", "RightFoot" },
+	}
+	local R6_BONES = {
+		{ "Head", "Torso" }, { "Torso", "Left Arm" }, { "Torso", "Right Arm" },
+		{ "Torso", "Left Leg" }, { "Torso", "Right Leg" },
+	}
+
+	local function gradientColors(colors)
 		return ColorSequence.new({
 			ColorSequenceKeypoint.new(0, colors[1]),
 			ColorSequenceKeypoint.new(0.5, colors[2]),
@@ -1029,56 +1240,270 @@ do
 	end
 
 	local clock = 0
-	local function paintGradient(g, element)
-		g.Color = sequence(element.Colors)
+	local function paint(gradient, element)
+		gradient.Color = gradientColors(element.Colors)
 		local rotation = element.Rotation
 		if element.Animate then rotation += clock * element.Speed * 360 end
-		g.Rotation = rotation % 360
+		gradient.Rotation = rotation % 360
 	end
 
-	local E = EspState.Elements
-	RunService.RenderStepped:Connect(function(dt)
-		if not (Window.Visible and stage.AbsoluteSize.X > 0 and stage.Parent and item.Frame.Visible) then return end
-		clock += dt
+	local function newLabel(parent, size)
+		return make("TextLabel", {
+			BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.fromOffset(200, 14),
+			TextSize = size, TextStrokeTransparency = 0.35, TextColor3 = WHITE, ZIndex = 8, Text = "",
+		}, parent)
+	end
 
-		boxFill.Visible = E.BoxFill.Enabled
-		if E.BoxFill.Enabled then paintGradient(fillGradient, E.BoxFill) end
+	local function newEntry()
+		local entry = {}
+		local root = box("Entry", gui, 1)
+		root.Visible = false
+		entry.Root = root
 
-		box.Visible = E.Box.Enabled
-		if E.Box.Enabled then paintGradient(boxGradient, E.Box) end
+		entry.Fill = box("BoxFill", root, 1)
+		entry.Fill.Size = UDim2.fromScale(1, 1)
+		entry.Fill.BackgroundColor3 = WHITE
+		entry.Fill.BackgroundTransparency = 0.72
+		entry.FillGradient = make("UIGradient", {}, entry.Fill)
 
-		healthBack.Visible = E.HealthBar.Enabled
+		entry.Box = box("Box", root, 4)
+		entry.Box.Size = UDim2.fromScale(1, 1)
+		make("UIStroke", { Thickness = 3, Color = BLACK, Transparency = 0.2 }, entry.Box)
+		local inner = box("Inner", entry.Box, 5)
+		inner.Size = UDim2.fromScale(1, 1)
+		local stroke = make("UIStroke", { Thickness = 1, Color = WHITE }, inner)
+		entry.BoxGradient = make("UIGradient", {}, stroke)
+
+		entry.Health = box("HealthBar", root, 4)
+		entry.Health.BackgroundTransparency = 0.25
+		entry.Health.BackgroundColor3 = BLACK
+		entry.Health.Position = UDim2.fromOffset(-7, -1)
+		entry.Health.Size = UDim2.new(0, 4, 1, 2)
+		entry.HealthFill = box("Fill", entry.Health, 5)
+		entry.HealthFill.BackgroundTransparency = 0
+		entry.HealthFill.BackgroundColor3 = WHITE
+		entry.HealthFill.AnchorPoint = Vector2.new(0, 1)
+		entry.HealthFill.Position = UDim2.new(0, 1, 1, -1)
+		entry.HealthGradient = make("UIGradient", {}, entry.HealthFill)
+
+		entry.Ammo = box("AmmoBar", root, 4)
+		entry.Ammo.BackgroundTransparency = 0.25
+		entry.Ammo.BackgroundColor3 = BLACK
+		entry.Ammo.Position = UDim2.new(0, -1, 1, 3)
+		entry.Ammo.Size = UDim2.new(1, 2, 0, 4)
+		entry.AmmoFill = box("Fill", entry.Ammo, 5)
+		entry.AmmoFill.BackgroundTransparency = 0
+		entry.AmmoFill.BackgroundColor3 = WHITE
+		entry.AmmoFill.Position = UDim2.fromOffset(1, 1)
+		entry.AmmoGradient = make("UIGradient", {}, entry.AmmoFill)
+
+		entry.Name = newLabel(root, 12)
+		entry.Rank = newLabel(root, 11)
+		entry.Weapon = newLabel(root, 11)
+		entry.Weapon.AnchorPoint = Vector2.new(0.5, 0)
+
+		local skeleton = box("Skeleton", gui, 6)
+		skeleton.Size = UDim2.fromScale(1, 1)
+		skeleton.Visible = false
+		entry.Skeleton = skeleton
+		entry.Bones = {}
+		for index = 1, #R15_BONES do
+			local line = box("Bone", skeleton, 6)
+			line.AnchorPoint = Vector2.new(0.5, 0.5)
+			line.BackgroundTransparency = 0
+			line.Visible = false
+			make("UIStroke", { Thickness = 1, Color = BLACK, Transparency = 0.45 }, line)
+			entry.Bones[index] = line
+		end
+
+		entry.Dot = box("HeadDot", skeleton, 7)
+		entry.Dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		entry.Dot.Size = UDim2.fromOffset(7, 7)
+		entry.Dot.BackgroundTransparency = 0
+		make("UICorner", { CornerRadius = UDim.new(1, 0) }, entry.Dot)
+		make("UIStroke", { Thickness = 1, Color = BLACK }, entry.Dot)
+		return entry
+	end
+
+	local entries = {}
+	local function hide(entry)
+		entry.Root.Visible = false
+		entry.Skeleton.Visible = false
+	end
+
+	local function readNumber(instance, names)
+		for _, name in ipairs(names) do
+			local value = instance:GetAttribute(name)
+			if type(value) ~= "number" then
+				local child = instance:FindFirstChild(name)
+				value = child and child:IsA("ValueBase") and child.Value or nil
+			end
+			if type(value) == "number" then return value end
+		end
+	end
+
+	local function readText(instance, names)
+		for _, name in ipairs(names) do
+			local value = instance:GetAttribute(name)
+			if value == nil then
+				local child = instance:FindFirstChild(name, true)
+				value = child and child:IsA("ValueBase") and child.Value or nil
+			end
+			if value ~= nil and tostring(value) ~= "" then return tostring(value) end
+		end
+	end
+
+	local function weaponInfo(player, character)
+		local tool = character:FindFirstChildOfClass("Tool")
+		local name = tool and tool.Name or readText(character, { "CurrentWeapon", "EquippedWeapon", "Weapon" }) or readText(player, { "CurrentWeapon", "EquippedWeapon", "Weapon" })
+		local source = tool or character
+		local ammo = readNumber(source, { "Ammo", "CurrentAmmo", "Clip", "Magazine" })
+		local maxAmmo = readNumber(source, { "MaxAmmo", "ClipSize", "MagSize", "MaxClip" })
+		return name, ammo, maxAmmo
+	end
+
+	local function rankInfo(player)
+		return readText(player, { "Rank", "RankName", "Division", "Tier" })
+	end
+
+	local appliedFont
+	local function applyFonts(entry, face)
+		for _, label in ipairs({ entry.Name, entry.Rank, entry.Weapon }) do
+			if face then label.FontFace = face end
+		end
+	end
+
+	local function update(entry, player, camera, viewport)
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not (root and humanoid) or humanoid.Health <= 0 then return hide(entry) end
+		if EspState.TeamCheck and player.Team ~= nil and player.Team == localPlayer.Team then return hide(entry) end
+		local distance = (root.Position - camera.CFrame.Position).Magnitude
+		if EspState.LimitDistance and distance > EspState.MaxDistance then return hide(entry) end
+
+		local cframe, size = character:GetBoundingBox()
+		local half = Vector3.new(0, size.Y / 2, 0)
+		local top = camera:WorldToViewportPoint(cframe.Position + half)
+		local bottom = camera:WorldToViewportPoint(cframe.Position - half)
+		if top.Z <= 0 or bottom.Z <= 0 then return hide(entry) end
+
+		local height = math.abs(bottom.Y - top.Y)
+		local width = height * 0.55
+		local centerX = (top.X + bottom.X) / 2
+		local x, y = math.floor(centerX - width / 2), math.floor(math.min(top.Y, bottom.Y))
+		if x + width < 0 or x > viewport.X or y + height < 0 or y > viewport.Y or height < 4 then return hide(entry) end
+
+		local E = EspState.Elements
+		entry.Root.Position = UDim2.fromOffset(x, y)
+		entry.Root.Size = UDim2.fromOffset(math.floor(width), math.floor(height))
+		entry.Root.Visible = true
+
+		entry.Fill.Visible = E.BoxFill.Enabled
+		if E.BoxFill.Enabled then paint(entry.FillGradient, E.BoxFill) end
+		entry.Box.Visible = E.Box.Enabled
+		if E.Box.Enabled then paint(entry.BoxGradient, E.Box) end
+
+		entry.Health.Visible = E.HealthBar.Enabled
 		if E.HealthBar.Enabled then
-			local health = 0.62 + 0.33 * math.sin(clock * 0.7)
-			healthFill.Size = UDim2.new(1, -2, health, -2)
-			paintGradient(healthGradient, E.HealthBar)
+			local health = math.clamp(humanoid.Health / math.max(humanoid.MaxHealth, 1), 0, 1)
+			entry.HealthFill.Size = UDim2.new(1, -2, health, -2)
+			paint(entry.HealthGradient, E.HealthBar)
 		end
 
-		ammoBack.Visible = E.AmmoBar.Enabled
-		if E.AmmoBar.Enabled then
-			local ammo = 1 - (math.floor(clock * 5) % 34) / 30
-			ammo = math.clamp(ammo, 0, 1)
-			ammoFill.Size = UDim2.new(ammo, -2, 1, -2)
-			paintGradient(ammoGradient, E.AmmoBar)
+		local weapon, ammo, maxAmmo = weaponInfo(player, character)
+		local showAmmo = E.AmmoBar.Enabled and ammo ~= nil and maxAmmo ~= nil and maxAmmo > 0
+		entry.Ammo.Visible = showAmmo
+		if showAmmo then
+			entry.AmmoFill.Size = UDim2.new(math.clamp(ammo / maxAmmo, 0, 1), -2, 1, -2)
+			paint(entry.AmmoGradient, E.AmmoBar)
 		end
 
-		skeleton.Visible = E.Skeleton.Enabled
-		if E.Skeleton.Enabled then
-			for _, bone in ipairs(boneFrames) do bone.Line.BackgroundColor3 = E.Skeleton.Color end
+		local rank = E.Rank.Enabled and rankInfo(player) or nil
+		entry.Name.Visible = E.Name.Enabled
+		entry.Name.Text = player.DisplayName
+		entry.Name.TextColor3 = E.Name.Color
+		entry.Name.Position = UDim2.new(0.5, 0, 0, -3)
+		entry.Rank.Visible = rank ~= nil
+		entry.Rank.Text = rank or ""
+		entry.Rank.TextColor3 = E.Rank.Color
+		entry.Rank.Position = UDim2.new(0.5, 0, 0, E.Name.Enabled and -17 or -3)
+		entry.Weapon.Visible = E.Weapon.Enabled and weapon ~= nil
+		entry.Weapon.Text = weapon or ""
+		entry.Weapon.TextColor3 = E.Weapon.Color
+		entry.Weapon.Position = UDim2.new(0.5, 0, 1, showAmmo and 10 or 2)
+
+		local wantSkeleton = E.Skeleton.Enabled
+		local wantDot = E.HeadDot.Enabled
+		entry.Skeleton.Visible = wantSkeleton or wantDot
+		for _, line in ipairs(entry.Bones) do line.Visible = false end
+		if wantSkeleton then
+			local bones = character:FindFirstChild("UpperTorso") and R15_BONES or R6_BONES
+			for index, pair in ipairs(bones) do
+				local a, b = character:FindFirstChild(pair[1]), character:FindFirstChild(pair[2])
+				local line = entry.Bones[index]
+				if a and b and line then
+					local pa, pb = camera:WorldToViewportPoint(a.Position), camera:WorldToViewportPoint(b.Position)
+					if pa.Z > 0 and pb.Z > 0 then
+						local delta = Vector2.new(pb.X - pa.X, pb.Y - pa.Y)
+						line.Position = UDim2.fromOffset((pa.X + pb.X) / 2, (pa.Y + pb.Y) / 2)
+						line.Size = UDim2.fromOffset(delta.Magnitude, 1.5)
+						line.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+						line.BackgroundColor3 = E.Skeleton.Color
+						line.Visible = true
+					end
+				end
+			end
 		end
+		entry.Dot.Visible = false
+		if wantDot then
+			local head = character:FindFirstChild("Head")
+			if head then
+				local point = camera:WorldToViewportPoint(head.Position)
+				if point.Z > 0 then
+					entry.Dot.Position = UDim2.fromOffset(point.X, point.Y)
+					entry.Dot.BackgroundColor3 = E.HeadDot.Color
+					entry.Dot.Visible = true
+				end
+			end
+		end
+	end
 
-		headDot.Visible = E.HeadDot.Enabled
-		headDot.BackgroundColor3 = E.HeadDot.Color
+	Players.PlayerRemoving:Connect(function(player)
+		local entry = entries[player]
+		if entry then
+			entry.Root:Destroy()
+			entry.Skeleton:Destroy()
+			entries[player] = nil
+		end
+	end)
 
-		nameLabel.Visible = E.Name.Enabled
-		nameLabel.TextColor3 = E.Name.Color
-		rankLabel.Visible = E.Rank.Enabled
-		rankLabel.TextColor3 = E.Rank.Color
-		weaponLabel.Visible = E.Weapon.Enabled
-		weaponLabel.TextColor3 = E.Weapon.Color
-		weaponLabel.Position = E.AmmoBar.Enabled and UDim2.new(0.5, 0, 1, PAD + 10) or UDim2.new(0.5, 0, 1, PAD + 2)
-		local topOffset = E.Name.Enabled and -PAD - 17 or -PAD - 3
-		rankLabel.Position = UDim2.new(0.5, 0, 0, topOffset)
+	local lastFont
+	RunService.RenderStepped:Connect(function(dt)
+		clock += dt
+		local camera = workspace.CurrentCamera
+		if not (EspState.Enabled and camera) then
+			for _, entry in pairs(entries) do hide(entry) end
+			return
+		end
+		if lastFont ~= EspState.Font then
+			lastFont = EspState.Font
+			appliedFont = fontFace(EspState.Font, Enum.FontWeight.Bold)
+			for _, entry in pairs(entries) do applyFonts(entry, appliedFont) end
+		end
+		local viewport = camera.ViewportSize
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= localPlayer then
+				local entry = entries[player]
+				if not entry then
+					entry = newEntry()
+					applyFonts(entry, appliedFont)
+					entries[player] = entry
+				end
+				local ok = pcall(update, entry, player, camera, viewport)
+				if not ok then hide(entry) end
+			end
+		end
 	end)
 end
 
@@ -1537,6 +1962,8 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local existing = PlayerGui:FindFirstChild("ParanoiaMobileToggle")
 if existing then existing:Destroy() end
+local existingBinds = PlayerGui:FindFirstChild("ParanoiaMobileBinds")
+if existingBinds then existingBinds:Destroy() end
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "ParanoiaMobileToggle"
@@ -1546,47 +1973,141 @@ gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.DisplayOrder = 999
 gui.Parent = PlayerGui
 
-local toggleBtn = Instance.new("TextButton")
+local bindGui = Instance.new("ScreenGui")
+bindGui.Name = "ParanoiaMobileBinds"
+bindGui.ResetOnSpawn = false
+bindGui.IgnoreGuiInset = true
+bindGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+bindGui.DisplayOrder = 998
+bindGui.Parent = PlayerGui
+
+local IDLE_STROKE = Color3.fromRGB(65, 68, 80)
+local IDLE_TEXT = Color3.fromRGB(232, 234, 245)
+local RunService = game:GetService("RunService")
+
+local MobileButtons = {}
+local mobileFont = "Inter"
+
+local function applyMobileFont(panel)
+	local face = fontFace(mobileFont, Enum.FontWeight.SemiBold)
+	if face then
+		panel.Label.FontFace = face
+	else
+		panel.Label.Font = Enum.Font.GothamMedium
+	end
+end
+
+-- A button styled like the Toggle UI button: uses the menu font and glows in the menu accent while pressed.
+local function createPanelButton(parent, text, position)
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(0, 108, 0, 32)
+	button.Position = position
+	button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	button.BackgroundTransparency = 0
+	button.BorderSizePixel = 0
+	button.Text = ""
+	button.AutoButtonColor = false
+	button.Active = true
+	button.Parent = parent
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 6)
+	corner.Parent = button
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = IDLE_STROKE
+	stroke.Thickness = 1
+	stroke.Parent = button
+
+	local glow = Instance.new("ImageLabel")
+	glow.Name = "Glow"
+	glow.BackgroundTransparency = 1
+	glow.AnchorPoint = Vector2.new(0.5, 0.5)
+	glow.Position = UDim2.fromScale(0.5, 0.5)
+	glow.Size = UDim2.new(1, 44, 1, 44)
+	glow.Image = Assets["fx/glow.png"] or ""
+	glow.ImageColor3 = accentColor
+	glow.ImageTransparency = 1
+	glow.ZIndex = 1
+	glow.Parent = button
+
+	local label = Instance.new("TextLabel")
+	label.Name = "Label"
+	label.Size = UDim2.new(1, -10, 1, 0)
+	label.Position = UDim2.new(0, 5, 0, 0)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = IDLE_TEXT
+	label.Font = Enum.Font.GothamMedium
+	label.TextSize = 12
+	label.TextTruncate = Enum.TextTruncate.AtEnd
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.ZIndex = 2
+	label.Parent = button
+
+	local panel = { Button = button, Label = label, Stroke = stroke, Glow = glow, Pressed = false, Lit = 0, Sticky = false }
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			panel.Pressed = true
+		end
+	end)
+	applyMobileFont(panel)
+	table.insert(MobileButtons, panel)
+	button.Destroying:Connect(function()
+		local index = table.find(MobileButtons, panel)
+		if index then table.remove(MobileButtons, index) end
+	end)
+	return panel
+end
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		for _, panel in ipairs(MobileButtons) do
+			if panel.Pressed then
+				panel.Pressed = false
+				if panel.OnRelease then task.spawn(panel.OnRelease) end
+			end
+		end
+	end
+end)
+
+RunService.RenderStepped:Connect(function(dt)
+	local alpha = math.min(1, dt * 16)
+	for _, panel in ipairs(MobileButtons) do
+		local lit = panel.Pressed and 1 or ((panel.Sticky and panel.Sticky()) and 0.55 or 0)
+		panel.Lit += (lit - panel.Lit) * alpha
+		local amount = panel.Lit
+		panel.Stroke.Color = IDLE_STROKE:Lerp(accentColor, amount)
+		panel.Stroke.Thickness = 1 + amount * 1.5
+		panel.Glow.ImageColor3 = accentColor
+		panel.Glow.ImageTransparency = 1 - amount * 0.7
+		panel.Label.TextColor3 = IDLE_TEXT:Lerp(Color3.new(1, 1, 1), amount)
+		panel.Button.BackgroundColor3 = Color3.fromRGB(0, 0, 0):Lerp(accentColor:Lerp(Color3.new(0, 0, 0), 0.8), amount)
+	end
+end)
+
+do
+	local setFont = Window.SetFont
+	Window.SetFont = function(self, name, ...)
+		mobileFont = name
+		for _, panel in ipairs(MobileButtons) do applyMobileFont(panel) end
+		return setFont(self, name, ...)
+	end
+end
+
+-- Toggle UI button
+local toggleBtn
+local open = false
+local toggleUI = createPanelButton(gui, "Toggle UI", UDim2.new(0, 14, 0.5, -16))
+toggleBtn = toggleUI.Button
 toggleBtn.Name = "ToggleButton"
-toggleBtn.Size = UDim2.new(0, 108, 0, 32)
-toggleBtn.Position = UDim2.new(0, 14, 0.5, -16)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-toggleBtn.BackgroundTransparency = 0
-toggleBtn.BorderSizePixel = 0
-toggleBtn.Text = ""
-toggleBtn.AutoButtonColor = false
-toggleBtn.Active = true
 toggleBtn.Draggable = true
 toggleBtn.Visible = UserInputService.TouchEnabled
-toggleBtn.Parent = gui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 6)
-corner.Parent = toggleBtn
-
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(65, 68, 80)
-stroke.Thickness = 1
-stroke.Parent = toggleBtn
-
-local label = Instance.new("TextLabel")
-label.Name = "Label"
-label.Size = UDim2.new(1, -10, 1, 0)
-label.Position = UDim2.new(0, 5, 0, 0)
-label.BackgroundTransparency = 1
-label.Text = "Toggle UI"
-label.TextColor3 = Color3.fromRGB(232, 234, 245)
-label.Font = Enum.Font.GothamMedium
-label.TextSize = 12
-label.TextXAlignment = Enum.TextXAlignment.Center
-label.TextYAlignment = Enum.TextYAlignment.Center
-label.Parent = toggleBtn
-
-local open = false
+toggleUI.Sticky = function() return open end
 
 local function setOpen(state)
 	open = state
-	stroke.Color = open and Color3.fromRGB(230, 160, 255) or Color3.fromRGB(65, 68, 80)
 end
 
 local function toggle()
@@ -1607,12 +2128,56 @@ end
 toggleBtn.MouseButton1Click:Connect(onClick)
 toggleBtn.TouchTap:Connect(onClick)
 
-toggleBtn.MouseEnter:Connect(function()
-	TweenService:Create(stroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(230, 160, 255) }):Play()
-end)
-toggleBtn.MouseLeave:Connect(function()
-	TweenService:Create(stroke, TweenInfo.new(0.15), { Color = open and Color3.fromRGB(230, 160, 255) or Color3.fromRGB(65, 68, 80) }):Play()
-end)
+-- Mobile buttons for keybinds, spawned from the keybind menu (Toggle and Hold modes only).
+local function removeMobileButton(bind)
+	local panel = bind.MobileButton
+	if not panel then return end
+	bind.MobileButton = nil
+	if panel.Pressed and bind.OnRelease then pcall(bind.OnRelease) end
+	panel.Button:Destroy()
+end
+
+local function spawnMobileButton(bind)
+	if bind.MobileButton then
+		removeMobileButton(bind)
+		return
+	end
+	if bind.Mode == "Always" then return end
+	local count = 0
+	for _, other in ipairs(Window.Binds or {}) do
+		if other.MobileButton then count += 1 end
+	end
+	local panel = createPanelButton(bindGui, bind.Name or "Keybind", UDim2.new(0, 14, 0.5, 24 + count * 40))
+	panel.Button.Name = "Bind_" .. tostring(bind.Name or "Key")
+	panel.Button.Draggable = false
+	panel.Sticky = bind.GetState
+	bind.MobileButton = panel
+	panel.Button.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if Window.Visible then return end
+		if bind.Mode == "Always" then return end
+		if bind.OnPress then task.spawn(bind.OnPress) end
+	end)
+	panel.OnRelease = function()
+		if Window.Visible or bind.Mode == "Always" then return end
+		if bind.OnRelease then bind.OnRelease() end
+	end
+	-- While the menu is open the button can be dragged into place instead of pressed.
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		if not panel.Button.Parent then
+			connection:Disconnect()
+			return
+		end
+		panel.Button.Draggable = Window.Visible == true
+		if Window.Visible then panel.Pressed = false end
+	end)
+end
+
+Window.OnMobileButton = spawnMobileButton
+Window.OnKeybindMode = function(bind, mode)
+	if mode == "Always" then removeMobileButton(bind) end
+end
 
 if not UserInputService.TouchEnabled then
 	gui.Enabled = false
