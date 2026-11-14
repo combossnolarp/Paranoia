@@ -16,16 +16,8 @@ if not Blossom then
 			return string.gsub(text, target, function() return replacement end, 1)
 		end
 
-		src = replace(src, "if picker%.Target then picker%.Target:Set%(Color3%.fromHSV%(picker%.H, picker%.S, picker%.V%), picker%.Alpha%) end",
-			"if picker.Target then picker.Target:Set(Color3.fromHSV(picker.H, picker.S, picker.V), picker.Alpha, true) end")
-
 		src = replace(src, "swatch%.BackgroundColor3 = value\n\t\tif win%.Picker%.Target == color and not win%.Picker%.Dragging then win%.Picker%.Sync%(%) end\n\t\tif not silent then fire%(color%.Callback, value, color%.Alpha%) end",
 			"swatch.BackgroundColor3 = value\n\t\tswatch.BackgroundTransparency = color.Alpha\n\t\tif win.Picker.Target == color and not win.Picker.Dragging then win.Picker.Sync() end\n\t\tif not silent then fire(color.Callback, value, color.Alpha) end")
-
-		src = replace(src, "picker%.S, picker%.V, picker%.Alpha = s, v, target%.Alpha or 0",
-			"picker.S, picker.V, picker.Alpha = s, v, target.Alpha or 0")
-		src = replace(src, "if picker%.Target then picker%.Target:Set%(Color3%.fromHSV%(picker%.H, picker%.S, picker%.V%), picker%.Alpha%) end",
-			"if picker.Target then picker.Target:Set(Color3.fromHSV(picker.H, picker.S, picker.V), picker.Alpha) end")
 
 		local checkerboardCode = [[
 		for i = 0, 60 do
@@ -322,19 +314,209 @@ task.spawn(function()
 	if setDragLogo then setDragLogo(anim, static) end
 end)
 
-Window:Category("Combat")
-local Rage = Window:Tab({ Name = "Rage", Icon = "target" })
-local Legit = Window:Tab({ Name = "Legit", Icon = "bullet" })
-Window:Category("Visuals")
-local PlayersTab = Window:Tab({ Name = "Players", Icon = "smile" })
-local Effects = Window:Tab({ Name = "Effects", Icon = "globe" })
-Window:Category("Player")
-local Movement = Window:Tab({ Name = "Movement", Icon = "smile" })
-local Exploits = Window:Tab({ Name = "Exploits", Icon = "bomb" })
-local Plugins = Window:Tab({ Name = "Plugins", Icon = "file" })
-local Settings = Window:Tab({ Name = "Settings", Icon = "gear" })
+local NavMetrics = Blossom.Metrics or {}
+local NAV_PAD = NavMetrics.Pad or 10
+local NAV_TAB_H = NavMetrics.TabH or 28
+local NAV_TAB_PITCH = NavMetrics.TabPitch or 32
+local NAV_CAT_TO_TAB = NavMetrics.CategoryToTab or 25
+local NAV_TAB_TO_CAT = NavMetrics.TabToCategory or 25
+local NAV_FIRST_CAT = NavMetrics.FirstCategory or 56
+local NAV_CHILD_PITCH = 30
+local NAV_CHILD_INDENT = 12
+local NavTweenInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local NavTweens = game:GetService("TweenService")
 
-local Ragebot = Rage:Section({ Name = "Ragebot", Icon = "robot", Side = 1 })
+local Nav = { Entries = {}, Groups = {}, ParentOf = {}, KnownLabels = {}, Open = nil }
+
+local function navMove(inst, position, animated)
+	if animated then
+		NavTweens:Create(inst, NavTweenInfo, { Position = position }):Play()
+	else
+		inst.Position = position
+	end
+end
+
+local function navLayout(animated)
+	local y, hasTabs, afterCategory = NAV_FIRST_CAT, false, false
+	local function placeTab(tab, tabY)
+		tab.Y = tabY - NAV_TAB_H / 2
+		navMove(tab.Button, UDim2.fromOffset(NAV_PAD, tab.Y), animated)
+	end
+	for _, entry in ipairs(Nav.Entries) do
+		if entry.Kind == "Category" then
+			y += hasTabs and NAV_TAB_TO_CAT or 0
+			afterCategory = true
+			if entry.Label then
+				navMove(entry.Label, UDim2.new(entry.Label.Position.X.Scale, entry.Label.Position.X.Offset, 0, y - 6), animated)
+			end
+		else
+			y += afterCategory and NAV_CAT_TO_TAB or NAV_TAB_PITCH
+			afterCategory, hasTabs = false, true
+			placeTab(entry.Tab, y)
+			if entry.Kind == "Group" then
+				local open = Nav.Open == entry
+				local parentPosition = UDim2.fromOffset(NAV_PAD, entry.Tab.Y)
+				if animated then
+					NavTweens:Create(entry.Chevron, NavTweenInfo, { Rotation = open and 0 or -90 }):Play()
+				else
+					entry.Chevron.Rotation = open and 0 or -90
+				end
+				for _, child in ipairs(entry.Children) do
+					if open then
+						y += NAV_CHILD_PITCH
+						if not child.Button.Visible then
+							child.Button.Position = parentPosition
+							child.Button.Visible = true
+						end
+						placeTab(child, y)
+					else
+						child.Button.Visible = false
+						child.Y = entry.Tab.Y
+						child.Button.Position = parentPosition
+					end
+				end
+			end
+		end
+	end
+	return y
+end
+
+local baseSelectTab = Window.SelectTab
+Window.SelectTab = function(self, tab, instant)
+	local group = Nav.Groups[tab]
+	if group and #group.Children > 0 then
+		tab = group.Last or group.Children[1]
+	end
+	local owner = Nav.ParentOf[tab]
+	if owner then owner.Last = tab end
+	if Nav.Open ~= owner then
+		Nav.Open = owner
+		navLayout(not instant)
+	end
+	return baseSelectTab(self, tab, instant)
+end
+
+local function Category(name)
+	Window:Category(name)
+	local found
+	for _, child in ipairs(Window.Sidebar:GetChildren()) do
+		if child:IsA("TextLabel") and not Nav.KnownLabels[child] and string.lower(child.Text) == string.lower(name) then
+			found = child
+		end
+	end
+	if found then Nav.KnownLabels[found] = true end
+	table.insert(Nav.Entries, { Kind = "Category", Label = found })
+end
+
+local function Tab(options)
+	local tab = Window:Tab(options)
+	table.insert(Nav.Entries, { Kind = "Tab", Tab = tab })
+	return tab
+end
+
+local function makeChevron(button, label)
+	local chevron = Instance.new("Frame")
+	chevron.Name = "Chevron"
+	chevron.BackgroundTransparency = 1
+	chevron.AnchorPoint = Vector2.new(0.5, 0.5)
+	chevron.Position = UDim2.new(1, -12, 0.5, 0)
+	chevron.Size = UDim2.fromOffset(10, 10)
+	chevron.Rotation = -90
+	chevron.ZIndex = button.ZIndex + 1
+	chevron.Parent = button
+	local bars = {}
+	for index, rotation in ipairs({ 45, -45 }) do
+		local bar = Instance.new("Frame")
+		bar.BorderSizePixel = 0
+		bar.AnchorPoint = Vector2.new(0.5, 0.5)
+		bar.Position = UDim2.new(0.5, index == 1 and -2 or 2, 0.5, 0)
+		bar.Size = UDim2.fromOffset(6, 2)
+		bar.Rotation = rotation
+		bar.ZIndex = chevron.ZIndex
+		bar.Parent = chevron
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(1, 0)
+		corner.Parent = bar
+		table.insert(bars, bar)
+	end
+	local function paint()
+		for _, bar in ipairs(bars) do
+			bar.BackgroundColor3 = label and label.TextColor3 or Color3.new(1, 1, 1)
+		end
+	end
+	paint()
+	if label then label:GetPropertyChangedSignal("TextColor3"):Connect(paint) end
+	return chevron
+end
+
+local function Group(options, children)
+	local parent = Window:Tab(options)
+	local group = { Kind = "Group", Tab = parent, Children = {}, Last = nil }
+	group.Chevron = makeChevron(parent.Button, parent.Label)
+	for _, childOptions in ipairs(children) do
+		local child = Window:Tab(childOptions)
+		local padding = Instance.new("UIPadding")
+		padding.PaddingLeft = UDim.new(0, NAV_CHILD_INDENT)
+		padding.Parent = child.Button
+		child.Button.Visible = false
+		Nav.ParentOf[child] = group
+		table.insert(group.Children, child)
+	end
+	Nav.Groups[parent] = group
+	table.insert(Nav.Entries, group)
+	if Window.CurrentTab == parent then
+		Window:SelectTab(group.Children[1], true)
+	end
+	return table.unpack(group.Children)
+end
+
+local function finishNav()
+	local current = Window.CurrentTab
+	Nav.Open = current and Nav.ParentOf[current] or nil
+	local openY = navLayout(false)
+	local collapsedY = openY
+	if Nav.Open then collapsedY -= #Nav.Open.Children * NAV_CHILD_PITCH end
+	local most = 0
+	for _, entry in ipairs(Nav.Entries) do
+		if entry.Kind == "Group" then most = math.max(most, #entry.Children) end
+	end
+	Window.SidebarY = collapsedY + most * NAV_CHILD_PITCH
+	if current then
+		pcall(function() Window.Indicator.Position = UDim2.fromOffset(NAV_PAD + 1, current.Y + 1) end)
+	end
+	pcall(function()
+		local needed = Window:_minHeight()
+		if Window.Height < needed then Window:SetSize(Window.Width, needed) end
+	end)
+end
+
+Category("Combat")
+local RageMain, RageSilent, RageAntiAim = Group({ Name = "Rage", Icon = "target" }, {
+	{ Name = "Ragebot", Icon = "robot" },
+	{ Name = "Silent Aim", Icon = "bullet" },
+	{ Name = "Anti Aim", Icon = "wrench" },
+})
+local LegitAim, LegitRecoil, LegitTrigger = Group({ Name = "Legit", Icon = "bullet" }, {
+	{ Name = "Aim Assist", Icon = "target" },
+	{ Name = "Recoil", Icon = "wrench" },
+	{ Name = "Triggerbot", Icon = "bullet" },
+})
+Category("Visuals")
+local PlayersTab = Tab({ Name = "Players", Icon = "smile" })
+local EffectsLocal, EffectsWorld = Group({ Name = "Effects", Icon = "globe" }, {
+	{ Name = "Local", Icon = "smile" },
+	{ Name = "World", Icon = "globe" },
+})
+Category("Player")
+local MovementMain, MovementHop = Group({ Name = "Movement", Icon = "smile" }, {
+	{ Name = "Speed & Fly", Icon = "smile" },
+	{ Name = "Bunny Hop", Icon = "smile" },
+})
+local Exploits = Tab({ Name = "Exploits", Icon = "bomb" })
+local Plugins = Tab({ Name = "Plugins", Icon = "file" })
+local Settings = Tab({ Name = "Settings", Icon = "gear" })
+
+local Ragebot = RageMain:Section({ Name = "Ragebot", Icon = "robot", Side = 1 })
 Ragebot:Toggle({ Name = "Enabled", Default = true, Keybind = Enum.KeyCode.C })
 Ragebot:Divider()
 Ragebot:Toggle({ Name = "Auto Shoot", Default = true })
@@ -350,10 +532,10 @@ Ragebot:Divider()
 Ragebot:Dropdown({ Name = "Target Selection", Options = { "Closest to Crosshair", "Lowest Health", "Highest Threat", "Closest Distance" }, Default = "Closest to Crosshair" })
 Ragebot:Slider({ Name = "Max Distance", Min = 0, Max = 2000, Default = 798, Suffix = "st" })
 
-local Targeting = Rage:Section({ Name = "Targeting", Icon = "bullet", Side = 1 })
+local Targeting = RageMain:Section({ Name = "Targeting", Icon = "bullet", Side = 2 })
 Targeting:Dropdown({ Name = "Hitboxes", Options = { "Head", "Torso", "Arms", "Legs" }, Default = { "Head", "Torso" }, Multi = true })
 
-local Silent = Rage:Section({ Name = "Silent Aim", Icon = "bullet", Side = 2 })
+local Silent = RageSilent:Section({ Name = "Silent Aim", Icon = "bullet", Side = 1 })
 Silent:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.V })
 Silent:Divider()
 Silent:Toggle({ Name = "Use FOV", Default = true })
@@ -365,7 +547,7 @@ Silent:Dropdown({ Name = "Aim Point", Options = { "Head", "Torso", "Closest" }, 
 Silent:Toggle({ Name = "Prediction", Default = true })
 Silent:Slider({ Name = "Prediction Amount", Min = 0, Max = 5, Default = 1.2, Decimals = 1, Suffix = "x" })
 
-local AntiAim = Rage:Section({ Name = "Anti Aim", Icon = "wrench", Description = "Desync & angles", Side = 2 })
+local AntiAim = RageAntiAim:Section({ Name = "Anti Aim", Icon = "wrench", Description = "Desync & angles", Side = 1 })
 AntiAim:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.Z })
 AntiAim:Divider()
 AntiAim:Dropdown({ Name = "Pitch", Options = { "None", "Down", "Up", "Zero", "Random" }, Default = "Zero" })
@@ -376,7 +558,7 @@ AntiAim:Divider()
 AntiAim:Toggle({ Name = "Fake Duck", Default = false })
 AntiAim:Toggle({ Name = "Freestanding", Default = true })
 
-local Aim = Legit:Section({ Name = "Aim Assist", Icon = "target", Side = 1 })
+local Aim = LegitAim:Section({ Name = "Aim Assist", Icon = "target", Side = 1 })
 Aim:Toggle({ Name = "Enabled", Default = true })
 Aim:Divider()
 Aim:Toggle({ Name = "Draw FOV", Default = true, Color = Color3.fromRGB(255, 255, 255) })
@@ -386,11 +568,11 @@ Aim:Dropdown({ Name = "Hitpart", Options = { "Head", "Torso" }, Default = "Head"
 Aim:Toggle({ Name = "Visible Only", Default = true })
 Aim:Toggle({ Name = "Team Check", Default = true })
 
-local Recoil = Legit:Section({ Name = "Recoil Control", Icon = "wrench", Side = 1 })
+local Recoil = LegitRecoil:Section({ Name = "Recoil Control", Icon = "wrench", Side = 1 })
 Recoil:Toggle({ Name = "Enabled", Default = false })
 Recoil:Slider({ Name = "Vertical", Min = 0, Max = 100, Default = 70, Suffix = "%" })
 
-local Trigger = Legit:Section({ Name = "Triggerbot", Icon = "bullet", Side = 2 })
+local Trigger = LegitTrigger:Section({ Name = "Triggerbot", Icon = "bullet", Side = 1 })
 Trigger:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.T })
 Trigger:Divider()
 Trigger:Slider({ Name = "Reaction Delay", Min = 0, Max = 500, Default = 60, Suffix = "ms" })
@@ -404,20 +586,20 @@ PlayerESP:Toggle({ Name = "Names", Default = true })
 PlayerESP:Toggle({ Name = "Boxes", Default = true, Color = Color3.fromRGB(255, 255, 255) })
 PlayerESP:Toggle({ Name = "Health", Default = true })
 
-local World = Effects:Section({ Name = "Local", Icon = "smile", Side = 1 })
+local World = EffectsLocal:Section({ Name = "Local", Icon = "smile", Side = 1 })
 World:Toggle({ Name = "Remove Flash", Default = false })
 World:Toggle({ Name = "Third Person", Default = false })
 World:Slider({ Name = "Third Person Distance", Min = 0, Max = 30, Default = 12 })
 World:Slider({ Name = "Ratio", Min = 0, Max = 200, Default = 100 })
 
-local Lighting = Effects:Section({ Name = "World", Icon = "globe", Side = 2 })
+local Lighting = EffectsWorld:Section({ Name = "World", Icon = "globe", Side = 1 })
 Lighting:Toggle({ Name = "Ambience", Default = false, Color = Color3.fromRGB(180, 200, 255) })
 Lighting:Toggle({ Name = "Fog", Default = false })
 Lighting:Slider({ Name = "Fog Start", Min = 0, Max = 1000, Default = 100 })
 Lighting:Slider({ Name = "Fog End", Min = 0, Max = 1000, Default = 800 })
 Lighting:Slider({ Name = "Clock Time", Min = 0, Max = 24, Default = 14 })
 
-local Move = Movement:Section({ Name = "Movement", Icon = "smile", Side = 1 })
+local Move = MovementMain:Section({ Name = "Movement", Icon = "smile", Side = 1 })
 Move:Toggle({ Name = "Speed", Default = true })
 Move:Slider({ Name = "Speed Amount", Min = 16, Max = 200, Default = 50 })
 Move:Dropdown({ Name = "Speed Type", Options = { "WalkSpeed", "CFrame", "Velocity" }, Default = "WalkSpeed" })
@@ -426,7 +608,7 @@ Move:Toggle({ Name = "Fly", Default = true, Keybind = Enum.KeyCode.F })
 Move:Slider({ Name = "Fly Speed", Min = 1, Max = 300, Default = 60 })
 Move:Toggle({ Name = "NoClip", Default = false, Keybind = Enum.KeyCode.N })
 
-local Hop = Movement:Section({ Name = "Bunny Hop", Icon = "smile", Side = 2 })
+local Hop = MovementHop:Section({ Name = "Bunny Hop", Icon = "smile", Side = 1 })
 Hop:Toggle({ Name = "Enabled", Default = false })
 Hop:Dropdown({ Name = "Mode", Options = { "Auto Strafe", "Legit" }, Default = "Auto Strafe" })
 Hop:Slider({ Name = "Strafe Strength", Min = 0, Max = 100, Default = 40, Suffix = "%" })
@@ -438,6 +620,7 @@ ExploitMain:Toggle({ Name = "Hide Shots", Default = false })
 Plugins:Section({ Name = "Plugins", Icon = "file", Side = 1 }):Label({ Name = "No plugins loaded" })
 
 Window:BuildSettings(Settings)
+finishNav()
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
