@@ -2687,7 +2687,10 @@ do
 	visual.Parent = gui
 
 	local section = LegitSilent:Section({ Name = "Silent Aim", Icon = Icon("silent", "bullet"), Side = 1 })
-	section:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.V, Callback = function(value) SilentState.Enabled = value end })
+	section:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.V, Callback = function(value)
+		SilentState.Enabled = value
+		if value and SilentState.Install then pcall(SilentState.Install) end
+	end })
 	section:Toggle({ Name = "Manipulation", Default = false, Callback = function(value) SilentState.Manipulation = value end })
 	section:Toggle({ Name = "Closest Part", Default = false, Callback = function(value) SilentState.Closest = value end })
 	section:Toggle({ Name = "Visualize", Default = true, Callback = function(value) SilentState.Visualize = value end })
@@ -2770,7 +2773,11 @@ do
 		return origin, (part.Position - origin).Unit * length
 	end
 
-	if hookmetamethod and getnamecallmethod and newcclosure then
+	local hooksInstalled = false
+	local function installHooks()
+		if hooksInstalled then return end
+		hooksInstalled = true
+		if not (hookmetamethod and getnamecallmethod and newcclosure) then return end
 		local oldNamecall
 		oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
 			if SilentState.Part and not (checkcaller and checkcaller()) then
@@ -2810,9 +2817,11 @@ do
 			end
 			return oldIndex(self, key)
 		end))
-	else
+	end
+	if not (hookmetamethod and getnamecallmethod and newcclosure) then
 		section:Label({ Name = "Executor lacks hookmetamethod" })
 	end
+	SilentState.Install = installHooks
 end
 
 local AntiAim = { Enabled = false, Pitch = "disabled", PitchAngle = 0, Yaw = "disabled", YawAngle = 0, Underground = false }
@@ -3085,12 +3094,16 @@ do
 	if localPlayer.Character then task.spawn(onCharacter, localPlayer.Character) end
 	localPlayer.CharacterAdded:Connect(onCharacter)
 
+	local installSpoof
 	local info = MiscSpoof:Section({ Name = "Spoofers", Icon = Icon("automation", "robot"), Side = 1 })
 	info:Toggle({ Name = "Spoof Local Name", Default = false, Callback = function(value) Automation.NameLocal = value end })
 	info:Textbox({ Name = "Local Name", Placeholder = "Local name", Default = "Paranoia", Callback = function(text) Automation.NameValue = text end })
 	info:Toggle({ Name = "Spoof Other Names", Default = false, Callback = function(value) Automation.NameOthers = value end })
 	info:Textbox({ Name = "Other Name", Placeholder = "Name for others", Default = "Paranoia", Callback = function(text) Automation.NameOtherValue = text end })
-	info:Toggle({ Name = "Spoof Device", Default = false, Callback = function(value) Automation.SpoofDevice = value end })
+	info:Toggle({ Name = "Spoof Device", Default = false, Callback = function(value)
+		Automation.SpoofDevice = value
+		if value then pcall(installSpoof) end
+	end })
 	info:Dropdown({ Name = "Device", Options = { "computer", "mobile", "controller", "virtual reality" }, Default = "computer", Callback = function(value) Automation.Device = value end })
 
 	local replaced = setmetatable({}, { __mode = "k" })
@@ -3121,7 +3134,10 @@ do
 		end
 	end)
 
-	if hookmetamethod and newcclosure then
+	local spoofInstalled = false
+	installSpoof = function()
+		if spoofInstalled or not (hookmetamethod and newcclosure) then return end
+		spoofInstalled = true
 		local oldIndex
 		oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
 			if Automation.SpoofDevice and self == UserInputService and not (checkcaller and checkcaller()) then
