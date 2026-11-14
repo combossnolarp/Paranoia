@@ -1,4 +1,57 @@
 local Blossom = ...
+
+local ASSET_BASE = "https://raw.githubusercontent.com/combossnolarp/Paranoia/claude/wizardly-dijkstra-5vzykn/assets/"
+local ASSET_FOLDER = "Paranoia/assets_v2"
+local ICON_KEYS = {
+	"rage", "ragebot", "silent", "antiaim", "targeting", "legit", "aimassist", "recoil", "trigger",
+	"players", "effects", "local", "world", "movement", "speed", "bhop", "exploits", "plugins", "settings",
+	"profiles", "autoload", "theming", "menu", "background",
+}
+local ASSET_LIST = {
+	"logo_base.png", "logo_tint.png", "logo_anim_base.png", "logo_anim_tint.png",
+	"fx/snow.png", "fx/flake.png", "fx/petal.png", "fx/blossom.png", "fx/leaf.png", "fx/rain.png", "fx/star.png", "fx/glow.png",
+}
+for _, key in ipairs(ICON_KEYS) do
+	table.insert(ASSET_LIST, "icons/" .. key .. ".png")
+end
+
+local Assets = {}
+do
+	local getAsset = getcustomasset or getsynasset
+	if getAsset and writefile and isfile then
+		pcall(function()
+			if makefolder and isfolder then
+				if not isfolder("Paranoia") then makefolder("Paranoia") end
+				if not isfolder(ASSET_FOLDER) then makefolder(ASSET_FOLDER) end
+			end
+		end)
+		local pending = 0
+		for _, path in ipairs(ASSET_LIST) do
+			pending += 1
+			task.spawn(function()
+				local file = ASSET_FOLDER .. "/" .. (string.gsub(path, "/", "_"))
+				local ok, result = pcall(function()
+					if not isfile(file) then
+						local data = game:HttpGet(ASSET_BASE .. path)
+						if type(data) ~= "string" or string.sub(data, 2, 4) ~= "PNG" then return nil end
+						writefile(file, data)
+					end
+					return getAsset(file)
+				end)
+				if ok and result then Assets[path] = result end
+				pending -= 1
+			end)
+		end
+		local started = os.clock()
+		while pending > 0 and os.clock() - started < 15 do
+			task.wait()
+		end
+	end
+end
+
+local function Icon(key, fallback)
+	return Assets["icons/" .. key .. ".png"] or fallback
+end
 if not Blossom then
 	if script and script.Parent and script.Parent:FindFirstChild("Blossom") then
 		local ok, result = pcall(function()
@@ -14,6 +67,23 @@ if not Blossom then
 
 		local function replace(text, target, replacement)
 			return string.gsub(text, target, function() return replacement end, 1)
+		end
+
+		local function replacePlain(text, target, replacement)
+			local first, last = string.find(text, target, 1, true)
+			if not first then return text end
+			return string.sub(text, 1, first - 1) .. replacement .. string.sub(text, last + 1)
+		end
+
+		src = replacePlain(src,
+			"label(item.Frame, { Text = options.Name, Truncate = Enum.TextTruncate.AtEnd })\n\toptions.Y = Metrics.DropdownH - Metrics.InputH\n\tlocal dropdown = buildDropdown(self.Window, item.Frame, options)\n\tdropdown.Item = item",
+			"item.Label = label(item.Frame, { Text = options.Name, Truncate = Enum.TextTruncate.AtEnd })\n\tlocal _, inlineColor = addInlineControls(self, item, options, options.Name)\n\toptions.Y = Metrics.DropdownH - Metrics.InputH\n\tlocal dropdown = buildDropdown(self.Window, item.Frame, options)\n\tdropdown.Item = item\n\tdropdown.ColorPicker = inlineColor")
+
+		for name, key in pairs({ Profiles = "profiles", Autoload = "autoload", Theming = "theming", Menu = "menu" }) do
+			local asset = Icon(key)
+			if asset then
+				src = replacePlain(src, 'Name = "' .. name .. '", Icon = "cube"', 'Name = "' .. name .. '", Icon = ' .. string.format("%q", asset))
+			end
 		end
 
 		src = replace(src, "swatch%.BackgroundColor3 = value\n\t\tif win%.Picker%.Target == color and not win%.Picker%.Dragging then win%.Picker%.Sync%(%) end\n\t\tif not silent then fire%(color%.Callback, value, color%.Alpha%) end",
@@ -65,15 +135,6 @@ end
 
 local Window = Blossom.new({ Title = "Paranoia", Script = "Paranoia", Build = "Rivals", Theme = "Paranoia" })
 
-local ASSET_BASE = "https://raw.githubusercontent.com/combossnolarp/Paranoia/claude/wizardly-dijkstra-5vzykn/assets/"
-local LOGO = {
-	Base = { Id = nil, Url = ASSET_BASE .. "logo_base.png", File = "Paranoia/logo_base_v1.png" },
-	Tint = { Id = nil, Url = ASSET_BASE .. "logo_tint.png", File = "Paranoia/logo_tint_v1.png" },
-}
-local LOGO_ANIM = {
-	Base = { Id = nil, Url = ASSET_BASE .. "logo_anim_base.png", File = "Paranoia/logo_anim_base_v1.png" },
-	Tint = { Id = nil, Url = ASSET_BASE .. "logo_anim_tint.png", File = "Paranoia/logo_anim_tint_v1.png" },
-}
 local ANIM_FRAMES, ANIM_COLUMNS, ANIM_W, ANIM_H, ANIM_FRAME_TIME = 60, 6, 168, 89, 0.03
 
 local LogoImages = {}
@@ -124,22 +185,6 @@ local function watchAccent()
 end
 
 watchAccent()
-
-local function resolveAsset(asset)
-	if asset.Id then return asset.Id end
-	local getAsset = getcustomasset or getsynasset
-	if not (getAsset and writefile and isfile) then return nil end
-	local ok, result = pcall(function()
-		if not isfile(asset.File) then
-			if makefolder and isfolder and not isfolder("Paranoia") then makefolder("Paranoia") end
-			local data = game:HttpGet(asset.Url)
-			if not data or #data == 0 then return nil end
-			writefile(asset.File, data)
-		end
-		return getAsset(asset.File)
-	end)
-	return ok and result or nil
-end
 
 local function newLogoLayer(parent, image, zindex, tinted)
 	local layer = Instance.new("ImageLabel")
@@ -300,19 +345,13 @@ end
 
 local setDragLogo = setupDragOverlay()
 
-local function resolvePair(pair)
-	return { Base = resolveAsset(pair.Base), Tint = resolveAsset(pair.Tint) }
+local staticLogo = { Base = Assets["logo_base.png"], Tint = Assets["logo_tint.png"] }
+local animLogo = { Base = Assets["logo_anim_base.png"], Tint = Assets["logo_anim_tint.png"] }
+if staticLogo.Base or staticLogo.Tint then
+	applyLogo(Window.Sidebar, staticLogo)
+	applyLogo(Window.Watermark, staticLogo)
 end
-
-task.spawn(function()
-	local static = resolvePair(LOGO)
-	if static.Base or static.Tint then
-		applyLogo(Window.Sidebar, static)
-		applyLogo(Window.Watermark, static)
-	end
-	local anim = resolvePair(LOGO_ANIM)
-	if setDragLogo then setDragLogo(anim, static) end
-end)
+if setDragLogo then setDragLogo(animLogo, staticLogo) end
 
 local NavMetrics = Blossom.Metrics or {}
 local NAV_PAD = NavMetrics.Pad or 10
@@ -491,32 +530,32 @@ local function finishNav()
 end
 
 Category("Combat")
-local RageMain, RageSilent, RageAntiAim = Group({ Name = "Rage", Icon = "target" }, {
-	{ Name = "Ragebot", Icon = "robot" },
-	{ Name = "Silent Aim", Icon = "bullet" },
-	{ Name = "Anti Aim", Icon = "wrench" },
+local RageMain, RageSilent, RageAntiAim = Group({ Name = "Rage", Icon = Icon("rage", "target") }, {
+	{ Name = "Ragebot", Icon = Icon("ragebot", "robot") },
+	{ Name = "Silent Aim", Icon = Icon("silent", "bullet") },
+	{ Name = "Anti Aim", Icon = Icon("antiaim", "wrench") },
 })
-local LegitAim, LegitRecoil, LegitTrigger = Group({ Name = "Legit", Icon = "bullet" }, {
-	{ Name = "Aim Assist", Icon = "target" },
-	{ Name = "Recoil", Icon = "wrench" },
-	{ Name = "Triggerbot", Icon = "bullet" },
+local LegitAim, LegitRecoil, LegitTrigger = Group({ Name = "Legit", Icon = Icon("legit", "bullet") }, {
+	{ Name = "Aim Assist", Icon = Icon("aimassist", "target") },
+	{ Name = "Recoil", Icon = Icon("recoil", "wrench") },
+	{ Name = "Triggerbot", Icon = Icon("trigger", "bullet") },
 })
 Category("Visuals")
-local PlayersTab = Tab({ Name = "Players", Icon = "smile" })
-local EffectsLocal, EffectsWorld = Group({ Name = "Effects", Icon = "globe" }, {
-	{ Name = "Local", Icon = "smile" },
-	{ Name = "World", Icon = "globe" },
+local PlayersTab = Tab({ Name = "Players", Icon = Icon("players", "smile") })
+local EffectsLocal, EffectsWorld = Group({ Name = "Effects", Icon = Icon("effects", "globe") }, {
+	{ Name = "Local", Icon = Icon("local", "smile") },
+	{ Name = "World", Icon = Icon("world", "globe") },
 })
 Category("Player")
-local MovementMain, MovementHop = Group({ Name = "Movement", Icon = "smile" }, {
-	{ Name = "Speed & Fly", Icon = "smile" },
-	{ Name = "Bunny Hop", Icon = "smile" },
+local MovementMain, MovementHop = Group({ Name = "Movement", Icon = Icon("movement", "smile") }, {
+	{ Name = "Speed & Fly", Icon = Icon("speed", "smile") },
+	{ Name = "Bunny Hop", Icon = Icon("bhop", "smile") },
 })
-local Exploits = Tab({ Name = "Exploits", Icon = "bomb" })
-local Plugins = Tab({ Name = "Plugins", Icon = "file" })
-local Settings = Tab({ Name = "Settings", Icon = "gear" })
+local Exploits = Tab({ Name = "Exploits", Icon = Icon("exploits", "bomb") })
+local Plugins = Tab({ Name = "Plugins", Icon = Icon("plugins", "file") })
+local Settings = Tab({ Name = "Settings", Icon = Icon("settings", "gear") })
 
-local Ragebot = RageMain:Section({ Name = "Ragebot", Icon = "robot", Side = 1 })
+local Ragebot = RageMain:Section({ Name = "Ragebot", Icon = Icon("ragebot", "robot"), Side = 1 })
 Ragebot:Toggle({ Name = "Enabled", Default = true, Keybind = Enum.KeyCode.C })
 Ragebot:Divider()
 Ragebot:Toggle({ Name = "Auto Shoot", Default = true })
@@ -532,10 +571,10 @@ Ragebot:Divider()
 Ragebot:Dropdown({ Name = "Target Selection", Options = { "Closest to Crosshair", "Lowest Health", "Highest Threat", "Closest Distance" }, Default = "Closest to Crosshair" })
 Ragebot:Slider({ Name = "Max Distance", Min = 0, Max = 2000, Default = 798, Suffix = "st" })
 
-local Targeting = RageMain:Section({ Name = "Targeting", Icon = "bullet", Side = 2 })
+local Targeting = RageMain:Section({ Name = "Targeting", Icon = Icon("targeting", "bullet"), Side = 2 })
 Targeting:Dropdown({ Name = "Hitboxes", Options = { "Head", "Torso", "Arms", "Legs" }, Default = { "Head", "Torso" }, Multi = true })
 
-local Silent = RageSilent:Section({ Name = "Silent Aim", Icon = "bullet", Side = 1 })
+local Silent = RageSilent:Section({ Name = "Silent Aim", Icon = Icon("silent", "bullet"), Side = 1 })
 Silent:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.V })
 Silent:Divider()
 Silent:Toggle({ Name = "Use FOV", Default = true })
@@ -547,7 +586,7 @@ Silent:Dropdown({ Name = "Aim Point", Options = { "Head", "Torso", "Closest" }, 
 Silent:Toggle({ Name = "Prediction", Default = true })
 Silent:Slider({ Name = "Prediction Amount", Min = 0, Max = 5, Default = 1.2, Decimals = 1, Suffix = "x" })
 
-local AntiAim = RageAntiAim:Section({ Name = "Anti Aim", Icon = "wrench", Description = "Desync & angles", Side = 1 })
+local AntiAim = RageAntiAim:Section({ Name = "Anti Aim", Icon = Icon("antiaim", "wrench"), Description = "Desync & angles", Side = 1 })
 AntiAim:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.Z })
 AntiAim:Divider()
 AntiAim:Dropdown({ Name = "Pitch", Options = { "None", "Down", "Up", "Zero", "Random" }, Default = "Zero" })
@@ -558,7 +597,7 @@ AntiAim:Divider()
 AntiAim:Toggle({ Name = "Fake Duck", Default = false })
 AntiAim:Toggle({ Name = "Freestanding", Default = true })
 
-local Aim = LegitAim:Section({ Name = "Aim Assist", Icon = "target", Side = 1 })
+local Aim = LegitAim:Section({ Name = "Aim Assist", Icon = Icon("aimassist", "target"), Side = 1 })
 Aim:Toggle({ Name = "Enabled", Default = true })
 Aim:Divider()
 Aim:Toggle({ Name = "Draw FOV", Default = true, Color = Color3.fromRGB(255, 255, 255) })
@@ -568,11 +607,11 @@ Aim:Dropdown({ Name = "Hitpart", Options = { "Head", "Torso" }, Default = "Head"
 Aim:Toggle({ Name = "Visible Only", Default = true })
 Aim:Toggle({ Name = "Team Check", Default = true })
 
-local Recoil = LegitRecoil:Section({ Name = "Recoil Control", Icon = "wrench", Side = 1 })
+local Recoil = LegitRecoil:Section({ Name = "Recoil Control", Icon = Icon("recoil", "wrench"), Side = 1 })
 Recoil:Toggle({ Name = "Enabled", Default = false })
 Recoil:Slider({ Name = "Vertical", Min = 0, Max = 100, Default = 70, Suffix = "%" })
 
-local Trigger = LegitTrigger:Section({ Name = "Triggerbot", Icon = "bullet", Side = 1 })
+local Trigger = LegitTrigger:Section({ Name = "Triggerbot", Icon = Icon("trigger", "bullet"), Side = 1 })
 Trigger:Toggle({ Name = "Enabled", Default = false, Keybind = Enum.KeyCode.T })
 Trigger:Divider()
 Trigger:Slider({ Name = "Reaction Delay", Min = 0, Max = 500, Default = 60, Suffix = "ms" })
@@ -580,26 +619,26 @@ Trigger:Toggle({ Name = "Magnet Trigger", Default = false })
 Trigger:Slider({ Name = "Magnet FOV", Min = 0, Max = 100, Default = 25 })
 Trigger:Toggle({ Name = "Head Only", Default = true })
 
-local PlayerESP = PlayersTab:Section({ Name = "Players", Icon = "smile", Side = 1 })
+local PlayerESP = PlayersTab:Section({ Name = "Players", Icon = Icon("players", "smile"), Side = 1 })
 PlayerESP:Toggle({ Name = "Enabled", Default = false, Color = Color3.fromRGB(95, 136, 202) })
 PlayerESP:Toggle({ Name = "Names", Default = true })
 PlayerESP:Toggle({ Name = "Boxes", Default = true, Color = Color3.fromRGB(255, 255, 255) })
 PlayerESP:Toggle({ Name = "Health", Default = true })
 
-local World = EffectsLocal:Section({ Name = "Local", Icon = "smile", Side = 1 })
+local World = EffectsLocal:Section({ Name = "Local", Icon = Icon("local", "smile"), Side = 1 })
 World:Toggle({ Name = "Remove Flash", Default = false })
 World:Toggle({ Name = "Third Person", Default = false })
 World:Slider({ Name = "Third Person Distance", Min = 0, Max = 30, Default = 12 })
 World:Slider({ Name = "Ratio", Min = 0, Max = 200, Default = 100 })
 
-local Lighting = EffectsWorld:Section({ Name = "World", Icon = "globe", Side = 1 })
+local Lighting = EffectsWorld:Section({ Name = "World", Icon = Icon("world", "globe"), Side = 1 })
 Lighting:Toggle({ Name = "Ambience", Default = false, Color = Color3.fromRGB(180, 200, 255) })
 Lighting:Toggle({ Name = "Fog", Default = false })
 Lighting:Slider({ Name = "Fog Start", Min = 0, Max = 1000, Default = 100 })
 Lighting:Slider({ Name = "Fog End", Min = 0, Max = 1000, Default = 800 })
 Lighting:Slider({ Name = "Clock Time", Min = 0, Max = 24, Default = 14 })
 
-local Move = MovementMain:Section({ Name = "Movement", Icon = "smile", Side = 1 })
+local Move = MovementMain:Section({ Name = "Movement", Icon = Icon("speed", "smile"), Side = 1 })
 Move:Toggle({ Name = "Speed", Default = true })
 Move:Slider({ Name = "Speed Amount", Min = 16, Max = 200, Default = 50 })
 Move:Dropdown({ Name = "Speed Type", Options = { "WalkSpeed", "CFrame", "Velocity" }, Default = "WalkSpeed" })
@@ -608,19 +647,391 @@ Move:Toggle({ Name = "Fly", Default = true, Keybind = Enum.KeyCode.F })
 Move:Slider({ Name = "Fly Speed", Min = 1, Max = 300, Default = 60 })
 Move:Toggle({ Name = "NoClip", Default = false, Keybind = Enum.KeyCode.N })
 
-local Hop = MovementHop:Section({ Name = "Bunny Hop", Icon = "smile", Side = 1 })
+local Hop = MovementHop:Section({ Name = "Bunny Hop", Icon = Icon("bhop", "smile"), Side = 1 })
 Hop:Toggle({ Name = "Enabled", Default = false })
 Hop:Dropdown({ Name = "Mode", Options = { "Auto Strafe", "Legit" }, Default = "Auto Strafe" })
 Hop:Slider({ Name = "Strafe Strength", Min = 0, Max = 100, Default = 40, Suffix = "%" })
 
-local ExploitMain = Exploits:Section({ Name = "Main", Icon = "bomb", Side = 1 })
+local ExploitMain = Exploits:Section({ Name = "Main", Icon = Icon("exploits", "bomb"), Side = 1 })
 ExploitMain:Toggle({ Name = "Double Tap", Default = false })
 ExploitMain:Toggle({ Name = "Hide Shots", Default = false })
 
-Plugins:Section({ Name = "Plugins", Icon = "file", Side = 1 }):Label({ Name = "No plugins loaded" })
+Plugins:Section({ Name = "Plugins", Icon = Icon("plugins", "file"), Side = 1 }):Label({ Name = "No plugins loaded" })
 
 Window:BuildSettings(Settings)
 finishNav()
+
+local MenuEffects = {}
+do
+	local RunService = game:GetService("RunService")
+	local Lighting = game:GetService("Lighting")
+	local FxTweens = game:GetService("TweenService")
+
+	local state = { Blur = false, Effect = "None", Color = Color3.new(1, 1, 1), Amount = 50, Glow = 40, ShowClosed = false }
+	local MAX_PARTICLES = 220
+	local BLUR_SIZE = 18
+	local FALLBACK_IMAGE = "rbxasset://textures/particles/sparkles_main.dds"
+
+	local PRESETS = {
+		Snow = Color3.fromRGB(255, 255, 255),
+		Blossoms = Color3.fromRGB(255, 183, 213),
+		Leaves = Color3.fromRGB(236, 138, 58),
+		Rain = Color3.fromRGB(170, 200, 255),
+		Fireflies = Color3.fromRGB(255, 214, 110),
+		Embers = Color3.fromRGB(255, 120, 50),
+		Stars = Color3.fromRGB(255, 255, 255),
+	}
+	local EFFECT_ORDER = { "None", "Snow", "Blossoms", "Leaves", "Rain", "Fireflies", "Embers", "Stars" }
+
+	local function img(path)
+		return Assets["fx/" .. path .. ".png"] or FALLBACK_IMAGE
+	end
+
+	local oldBlur = Lighting:FindFirstChild("ParanoiaBlur")
+	if oldBlur then oldBlur:Destroy() end
+	local blur = Instance.new("BlurEffect")
+	blur.Name = "ParanoiaBlur"
+	blur.Size = 0
+	blur.Parent = Lighting
+	local blurTarget = -1
+
+	local function updateBlur()
+		if blur.Parent ~= Lighting then
+			pcall(function() blur.Parent = Lighting end)
+			blurTarget = -1
+		end
+		local target = (state.Blur and Window.Visible) and BLUR_SIZE or 0
+		if target == blurTarget then return end
+		blurTarget = target
+		FxTweens:Create(blur, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = target }):Play()
+	end
+
+	local screenParent = Window.Screen and Window.Screen.Parent
+	if screenParent then
+		local old = screenParent:FindFirstChild("ParanoiaEffects")
+		if old then old:Destroy() end
+	end
+	local layer = Instance.new("ScreenGui")
+	layer.Name = "ParanoiaEffects"
+	layer.IgnoreGuiInset = true
+	layer.ResetOnSpawn = false
+	layer.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	layer.DisplayOrder = math.max((Window.Screen and Window.Screen.DisplayOrder or 100) - 1, 0)
+	layer.Enabled = false
+	layer.Parent = screenParent or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+
+	local particles = {}
+	local rng = Random.new()
+
+	local function newParticle()
+		local glow = Instance.new("ImageLabel")
+		glow.BackgroundTransparency = 1
+		glow.AnchorPoint = Vector2.new(0.5, 0.5)
+		glow.Image = img("glow")
+		glow.ImageTransparency = 1
+		glow.Visible = false
+		glow.Parent = layer
+		local image = Instance.new("ImageLabel")
+		image.BackgroundTransparency = 1
+		image.AnchorPoint = Vector2.new(0.5, 0.5)
+		image.ImageTransparency = 1
+		image.Visible = false
+		image.Parent = layer
+		return { Image = image, Glow = glow }
+	end
+
+	local function tinted(base, kind)
+		if kind == "Leaves" or kind == "Blossoms" then
+			local h, s, v = base:ToHSV()
+			h = (h + rng:NextNumber(-0.035, 0.035)) % 1
+			s = math.clamp(s * rng:NextNumber(0.85, 1.1), 0, 1)
+			v = math.clamp(v * rng:NextNumber(0.82, 1), 0, 1)
+			return Color3.fromHSV(h, s, v)
+		end
+		return base:Lerp(Color3.new(0, 0, 0), rng:NextNumber(0, 0.12))
+	end
+
+	local function spawnParticle(p, kind, w, h, anywhere)
+		local depth = 0.3 + 0.7 * rng:NextNumber() ^ 1.6
+		p.Depth = depth
+		p.Phase = rng:NextNumber(0, math.pi * 2)
+		p.Rot = rng:NextNumber(0, 360)
+		p.RotSpeed = 0
+		p.SwayAmp, p.SwayFreq, p.FlipFreq, p.Twinkle = 0, 0, 0, 0
+		p.Vx, p.Vy = 0, 0
+		p.Flip = false
+		p.Kind = kind
+		local margin = 40
+		p.X = rng:NextNumber(-margin, w + margin)
+		p.Y = anywhere and rng:NextNumber(-margin, h + margin) or -margin - rng:NextNumber(0, 60)
+		local image
+		if kind == "Snow" then
+			local crystal = rng:NextNumber() < 0.18
+			image = crystal and img("flake") or img("snow")
+			p.W = (crystal and rng:NextNumber(10, 17) or rng:NextNumber(3, 8)) * (0.55 + depth * 0.65)
+			p.H = p.W
+			p.Vy = rng:NextNumber(22, 48) * (0.45 + depth)
+			p.Vx = rng:NextNumber(4, 14)
+			p.SwayAmp, p.SwayFreq = rng:NextNumber(10, 32), rng:NextNumber(0.25, 0.8)
+			p.RotSpeed = crystal and rng:NextNumber(-40, 40) or 0
+			p.Alpha = 0.45 + 0.55 * depth
+			p.GlowScale = 2.6
+		elseif kind == "Blossoms" then
+			local flower = rng:NextNumber() < 0.28
+			image = flower and img("blossom") or img("petal")
+			p.W = (flower and rng:NextNumber(14, 22) or rng:NextNumber(9, 15)) * (0.55 + depth * 0.65)
+			p.H = flower and p.W or p.W * 1.25
+			p.Vy = rng:NextNumber(26, 50) * (0.45 + depth)
+			p.Vx = rng:NextNumber(18, 46) * (0.5 + depth)
+			p.SwayAmp, p.SwayFreq = rng:NextNumber(14, 36), rng:NextNumber(0.3, 0.9)
+			p.RotSpeed = rng:NextNumber(-110, 110)
+			p.FlipFreq, p.Flip = rng:NextNumber(0.8, 2.2), true
+			p.Alpha = 0.6 + 0.4 * depth
+			p.GlowScale = 2.2
+			p.X = anywhere and p.X or rng:NextNumber(-w * 0.35, w)
+		elseif kind == "Leaves" then
+			image = img("leaf")
+			p.W = rng:NextNumber(12, 20) * (0.55 + depth * 0.65)
+			p.H = p.W * 1.45
+			p.Vy = rng:NextNumber(34, 70) * (0.45 + depth)
+			p.Vx = rng:NextNumber(-12, 34) * (0.5 + depth)
+			p.SwayAmp, p.SwayFreq = rng:NextNumber(24, 60), rng:NextNumber(0.3, 0.75)
+			p.RotSpeed = rng:NextNumber(-150, 150)
+			p.FlipFreq, p.Flip = rng:NextNumber(0.6, 1.6), true
+			p.Alpha = 0.7 + 0.3 * depth
+			p.GlowScale = 2
+		elseif kind == "Rain" then
+			image = img("rain")
+			p.W = 1.5 + depth * 1.6
+			p.H = rng:NextNumber(26, 46) * (0.5 + depth * 0.7)
+			p.Vy = rng:NextNumber(720, 980) * (0.55 + depth * 0.6)
+			p.Vx = p.Vy * 0.12
+			p.Rot = -math.deg(math.atan2(p.Vx, p.Vy))
+			p.Alpha = 0.2 + 0.4 * depth
+			p.GlowScale = 0
+			p.X = anywhere and p.X or rng:NextNumber(-w * 0.15, w)
+		elseif kind == "Fireflies" then
+			image = img("snow")
+			p.W = rng:NextNumber(3, 6) * (0.6 + depth * 0.6)
+			p.H = p.W
+			p.Y = rng:NextNumber(-margin, h + margin)
+			p.Heading = rng:NextNumber(0, math.pi * 2)
+			p.Speed = rng:NextNumber(10, 30) * (0.5 + depth)
+			p.Twinkle = rng:NextNumber(0.6, 1.6)
+			p.Alpha = 0.7 + 0.3 * depth
+			p.GlowScale = 5
+		elseif kind == "Embers" then
+			image = img("snow")
+			p.W = rng:NextNumber(2.5, 5.5) * (0.6 + depth * 0.6)
+			p.H = p.W
+			p.Y = anywhere and rng:NextNumber(-margin, h + margin) or h + margin + rng:NextNumber(0, 60)
+			p.Vy = -rng:NextNumber(40, 95) * (0.45 + depth)
+			p.SwayAmp, p.SwayFreq = rng:NextNumber(8, 26), rng:NextNumber(0.5, 1.3)
+			p.Twinkle = rng:NextNumber(4, 9)
+			p.Alpha = 0.6 + 0.4 * depth
+			p.GlowScale = 4.5
+		else
+			image = img("star")
+			p.W = rng:NextNumber(6, 15) * (0.5 + depth * 0.6)
+			p.H = p.W
+			p.Y = rng:NextNumber(-margin, h + margin)
+			p.Vx = 3 + 5 * depth
+			p.Twinkle = rng:NextNumber(0.5, 1.8)
+			p.Rot = 0
+			p.Alpha = 0.5 + 0.5 * depth
+			p.GlowScale = 3
+		end
+		p.Image.Image = image
+		p.Color = tinted(state.Color, kind)
+		p.Image.ImageColor3 = p.Color
+		p.Glow.ImageColor3 = p.Color
+		local z = 2 + math.floor(depth * 10) * 2
+		p.Image.ZIndex = z
+		p.Glow.ZIndex = z - 1
+	end
+
+	local alphaMul = 0
+	local clock = 0
+	local needsReset = true
+
+	local function viewport()
+		local size = layer.AbsoluteSize
+		if size.X < 2 then
+			local camera = workspace.CurrentCamera
+			size = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+		end
+		return size.X, size.Y
+	end
+
+	local function resetAll()
+		local w, h = viewport()
+		for _, p in ipairs(particles) do
+			spawnParticle(p, state.Effect, w, h, true)
+		end
+		needsReset = false
+	end
+
+	local function step(dt)
+		updateBlur()
+		local active = state.Effect ~= "None" and (Window.Visible or state.ShowClosed)
+		if active then
+			alphaMul = math.min(1, alphaMul + dt / 0.4)
+		else
+			alphaMul = math.max(0, alphaMul - dt / 0.3)
+		end
+		if alphaMul <= 0 and not active then
+			if layer.Enabled then
+				layer.Enabled = false
+				for _, p in ipairs(particles) do
+					p.Image.Visible = false
+					p.Glow.Visible = false
+				end
+			end
+			return
+		end
+		layer.Enabled = true
+		dt = math.min(dt, 0.1)
+		clock += dt
+		local w, h = viewport()
+		local count = math.floor(state.Amount / 100 * MAX_PARTICLES + 0.5)
+		while #particles < count do
+			local p = newParticle()
+			table.insert(particles, p)
+			spawnParticle(p, state.Effect, w, h, true)
+		end
+		if needsReset then resetAll() end
+		local glowAmount = state.Glow / 100
+		local margin = 50
+		for index, p in ipairs(particles) do
+			local image, glow = p.Image, p.Glow
+			if index > count then
+				image.Visible = false
+				glow.Visible = false
+				continue
+			end
+			local kind = p.Kind
+			local alpha = p.Alpha
+			local drawX, drawY = p.X, p.Y
+			local width, height = p.W, p.H
+			if kind == "Fireflies" then
+				p.Heading += math.sin(clock * 0.9 + p.Phase) * 1.8 * dt
+				p.X += math.cos(p.Heading) * p.Speed * dt
+				p.Y += math.sin(p.Heading) * p.Speed * dt
+				drawX, drawY = p.X, p.Y
+				local pulse = 0.5 + 0.5 * math.sin(clock * p.Twinkle * 2 + p.Phase)
+				alpha *= 0.15 + 0.85 * pulse * pulse
+			elseif kind == "Stars" then
+				p.X += p.Vx * dt
+				drawX = p.X
+				local pulse = 0.5 + 0.5 * math.sin(clock * p.Twinkle * 2 + p.Phase)
+				alpha *= 0.2 + 0.8 * pulse ^ 3
+				width = p.W * (0.75 + 0.35 * pulse)
+				height = width
+			else
+				p.X += p.Vx * dt
+				p.Y += p.Vy * dt
+				if kind == "Leaves" then
+					p.X += math.sin(clock * 0.35 + p.Phase * 0.2) * 22 * p.Depth * dt
+				end
+				drawX = p.X + math.sin(clock * p.SwayFreq * math.pi * 2 + p.Phase) * p.SwayAmp
+				p.Rot += p.RotSpeed * dt
+				if p.Flip then
+					width = p.W * (0.2 + 0.8 * math.abs(math.cos(clock * p.FlipFreq + p.Phase)))
+				end
+				if kind == "Embers" then
+					local flicker = 0.65 + 0.35 * math.sin(clock * p.Twinkle + p.Phase)
+					alpha *= flicker * math.clamp(p.Y / (h * 0.7), 0, 1)
+				end
+			end
+			if kind == "Embers" then
+				if p.Y < -margin then spawnParticle(p, kind, w, h, false) end
+			elseif kind == "Fireflies" or kind == "Stars" then
+				if p.Y < -margin then p.Y += h + margin * 2 elseif p.Y > h + margin then p.Y -= h + margin * 2 end
+			elseif p.Y > h + margin then
+				spawnParticle(p, kind, w, h, false)
+			end
+			if p.X > w + margin then p.X -= w + margin * 2 elseif p.X < -margin then p.X += w + margin * 2 end
+
+			local visibleAlpha = alpha * alphaMul
+			image.Visible = true
+			image.Position = UDim2.fromOffset(drawX, drawY)
+			image.Size = UDim2.fromOffset(width, height)
+			image.Rotation = p.Rot
+			image.ImageTransparency = 1 - visibleAlpha
+			if glowAmount > 0 and p.GlowScale > 0 then
+				local size = math.max(p.W, p.H) * (p.GlowScale * (0.6 + glowAmount))
+				glow.Visible = true
+				glow.Position = image.Position
+				glow.Size = UDim2.fromOffset(size, size)
+				glow.ImageTransparency = 1 - math.clamp(visibleAlpha * glowAmount * 0.6, 0, 1)
+			else
+				glow.Visible = false
+			end
+		end
+	end
+
+	RunService.RenderStepped:Connect(step)
+
+	local colorPicker
+	local lastColorChange = -1
+
+	local function setColor(color)
+		state.Color = color
+		lastColorChange = os.clock()
+		for _, p in ipairs(particles) do
+			p.Color = tinted(color, p.Kind)
+			p.Image.ImageColor3 = p.Color
+			p.Glow.ImageColor3 = p.Color
+		end
+	end
+
+	local function sameColor(a, b)
+		return math.abs(a.R - b.R) < 0.01 and math.abs(a.G - b.G) < 0.01 and math.abs(a.B - b.B) < 0.01
+	end
+
+	local function setEffect(name)
+		local previous = state.Effect
+		state.Effect = name
+		needsReset = true
+		local preset = PRESETS[name]
+		if not (colorPicker and preset) then return end
+		local wasPreset = PRESETS[previous] == nil or sameColor(state.Color, PRESETS[previous])
+		if not wasPreset then return end
+		local requested = os.clock()
+		task.defer(function()
+			if state.Effect ~= name or lastColorChange >= requested - 0.05 then return end
+			colorPicker:Set(preset)
+		end)
+	end
+
+	local menuSection
+	for _, section in pairs(Window.Sections or {}) do
+		if section.Name == "Menu" and section.Tab == Settings then
+			menuSection = section
+		end
+	end
+
+	if menuSection then
+		menuSection:Divider()
+		menuSection:Toggle({ Name = "Blur", Default = false, Callback = function(value) state.Blur = value end })
+		local effectDropdown = menuSection:Dropdown({
+			Name = "Background Effect", Options = EFFECT_ORDER, Default = "None",
+			Color = state.Color, ColorCallback = setColor,
+			Callback = setEffect,
+		})
+		colorPicker = effectDropdown and effectDropdown.ColorPicker
+		if not colorPicker then
+			colorPicker = menuSection:Colorpicker({ Name = "Effect Color", Default = state.Color, Callback = setColor })
+		end
+		menuSection:Slider({ Name = "Amount", Min = 0, Max = 100, Default = state.Amount, Suffix = "%", Callback = function(value) state.Amount = value end })
+		menuSection:Slider({ Name = "Glow", Min = 0, Max = 100, Default = state.Glow, Suffix = "%", Callback = function(value) state.Glow = value end })
+		menuSection:Toggle({ Name = "Show When Menu Is Closed", Default = false, Callback = function(value) state.ShowClosed = value end })
+	end
+
+	MenuEffects.State = state
+	MenuEffects.SetEffect = setEffect
+	MenuEffects.SetColor = setColor
+end
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
