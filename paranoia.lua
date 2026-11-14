@@ -667,7 +667,7 @@ do
 	local Lighting = game:GetService("Lighting")
 	local FxTweens = game:GetService("TweenService")
 
-	local state = { Blur = false, Effect = "None", Color = Color3.new(1, 1, 1), Amount = 50, Glow = 40, ShowClosed = false }
+	local state = { Blur = false, Effect = "None", Color = Color3.new(1, 1, 1), Amount = 50, Size = 1, Glow = 40, ShowClosed = false }
 	local MAX_PARTICLES = 220
 	local BLUR_SIZE = 18
 	local FALLBACK_IMAGE = "rbxasset://textures/particles/sparkles_main.dds"
@@ -901,6 +901,7 @@ do
 		end
 		if needsReset then resetAll() end
 		local glowAmount = state.Glow / 100
+		local sizeScale = state.Size
 		local margin = 50
 		for index, p in ipairs(particles) do
 			local image, glow = p.Image, p.Glow
@@ -952,14 +953,16 @@ do
 			end
 			if p.X > w + margin then p.X -= w + margin * 2 elseif p.X < -margin then p.X += w + margin * 2 end
 
+			width *= sizeScale
+			height *= sizeScale
 			local visibleAlpha = alpha * alphaMul
 			image.Visible = true
 			image.Position = UDim2.fromOffset(drawX, drawY)
 			image.Size = UDim2.fromOffset(width, height)
 			image.Rotation = p.Rot
 			image.ImageTransparency = 1 - visibleAlpha
-			if glowAmount > 0 and p.GlowScale > 0 then
-				local size = math.max(p.W, p.H) * (p.GlowScale * (0.6 + glowAmount))
+			if glowAmount > 0 and p.GlowScale > 0 and sizeScale > 0 then
+				local size = math.max(p.W, p.H) * sizeScale * (p.GlowScale * (0.6 + glowAmount))
 				glow.Visible = true
 				glow.Position = image.Position
 				glow.Size = UDim2.fromOffset(size, size)
@@ -1024,6 +1027,7 @@ do
 			colorPicker = menuSection:Colorpicker({ Name = "Effect Color", Default = state.Color, Callback = setColor })
 		end
 		menuSection:Slider({ Name = "Amount", Min = 0, Max = 100, Default = state.Amount, Suffix = "%", Callback = function(value) state.Amount = value end })
+		menuSection:Slider({ Name = "Size", Min = 0, Max = 10, Default = state.Size, Decimals = 1, Suffix = "x", Callback = function(value) state.Size = value end })
 		menuSection:Slider({ Name = "Glow", Min = 0, Max = 100, Default = state.Glow, Suffix = "%", Callback = function(value) state.Glow = value end })
 		menuSection:Toggle({ Name = "Show When Menu Is Closed", Default = false, Callback = function(value) state.ShowClosed = value end })
 	end
