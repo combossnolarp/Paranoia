@@ -818,6 +818,36 @@ local MovementMain = Group({ Name = "Movement", Icon = Icon("movement", "smile")
 })
 local Settings = Tab({ Name = "Settings", Icon = Icon("settings", "gear") })
 
+local FLOW_STEPS = 9
+local function flowSequence(colors, phase)
+	local c1, c2, c3 = colors[1], colors[2], colors[3]
+	local function sample(t)
+		t = (t % 1) * 3
+		if t < 1 then return c1:Lerp(c2, t) end
+		if t < 2 then return c2:Lerp(c3, t - 1) end
+		return c3:Lerp(c1, t - 2)
+	end
+	local points = table.create(FLOW_STEPS)
+	for i = 0, FLOW_STEPS - 1 do
+		local x = i / (FLOW_STEPS - 1)
+		points[i + 1] = ColorSequenceKeypoint.new(x, sample(x * 0.5 - phase))
+	end
+	return ColorSequence.new(points)
+end
+
+local function paintFlow(gradient, element, clock)
+	if element.Animate then
+		gradient.Color = flowSequence(element.Colors, clock * element.Speed * 0.5)
+	else
+		gradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, element.Colors[1]),
+			ColorSequenceKeypoint.new(0.5, element.Colors[2]),
+			ColorSequenceKeypoint.new(1, element.Colors[3]),
+		})
+	end
+	gradient.Rotation = element.Rotation % 360
+end
+
 local EspState = { Enabled = false, TeamCheck = false, LimitDistance = false, MaxDistance = 1000, Font = "Inter", Elements = {} }
 do
 	local RunService = game:GetService("RunService")
@@ -1120,10 +1150,7 @@ do
 
 		local clock = 0
 		local function paintGradient(g, element)
-			g.Color = sequence(element.Colors)
-			local rotation = element.Rotation
-			if element.Animate then rotation += clock * element.Speed * 360 end
-			g.Rotation = rotation % 360
+			paintFlow(g, element, clock)
 		end
 
 		local E = EspState.Elements
@@ -1224,10 +1251,7 @@ do
 
 	local clock = 0
 	local function paint(gradient, element)
-		gradient.Color = gradientColors(element.Colors)
-		local rotation = element.Rotation
-		if element.Animate then rotation += clock * element.Speed * 360 end
-		gradient.Rotation = rotation % 360
+		paintFlow(gradient, element, clock)
 	end
 
 	local function newLabel(parent, size)
